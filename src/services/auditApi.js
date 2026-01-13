@@ -1,84 +1,99 @@
-// Mock Audit Log API (append-only)
-const KEY = "cst_audit_v1";
+// src/services/auditApi.js
+// Real Audit API (FastAPI)
 
-const DEFAULT = [
-  {
-    id: "evt_001",
-    ts: "2026-01-06T10:25:10Z",
-    type: "auth.login",
-    actor: { role: "admin", email: "admin@cst.test" },
-    entity: { kind: "user", id: "u_admin" },
-    message: "Admin logged in",
-    meta: { ip: "127.0.0.1" },
-  },
-  {
-    id: "evt_002",
-    ts: "2026-01-06T10:27:33Z",
-    type: "taxonomy.category.create",
-    actor: { role: "admin", email: "admin@cst.test" },
-    entity: { kind: "category", id: "cat_road" },
-    message: "Created category 'Roads'",
-    meta: { code: "roads" },
-  },
-  {
-    id: "evt_003",
-    ts: "2026-01-06T10:31:02Z",
-    type: "sla.policy.create",
-    actor: { role: "admin", email: "admin@cst.test" },
-    entity: { kind: "sla", id: "sla_road_p1" },
-    message: "Created SLA policy for roads/pothole P1",
-    meta: { zone: "ZONE-DT-01", target_hours: 48, breach_hours: 60 },
-  },
-];
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
-function uid() {
-  return `evt_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
-}
-
-function read() {
-  const raw = localStorage.getItem(KEY);
-  if (!raw) return DEFAULT;
+function getAuth() {
+  const raw = sessionStorage.getItem("cst_auth_v1");
+  if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : DEFAULT;
+    return JSON.parse(raw);
   } catch {
-    return DEFAULT;
+    return null;
   }
 }
 
-function write(rows) {
-  localStorage.setItem(KEY, JSON.stringify(rows));
+function authHeader() {
+  const auth = getAuth();
+  const token = auth?.access_token || auth?.token || auth?.accessToken;
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-// Public: list (newest first)
-export async function listAuditEvents() {
-  await new Promise((r) => setTimeout(r, 160));
-  const rows = read();
-  // ensure newest first
-  return [...rows].sort((a, b) => new Date(b.ts) - new Date(a.ts));
+async function request(path, { method = "GET", headers = {}, body } = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeader(),
+      ...headers,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (!res.ok) {
+    let msg = `Request failed (${res.status})`;
+    try {
+      const data = await res.json();
+      msg = data?.detail || data?.message || msg;
+    } catch {
+      // ignore
+    }
+    throw new Error(msg);
+  }
+
+  // if csv/text
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("text/csv")) return await res.text();
+  if (contentType.includes("text/plain")) return await res.text();
+
+  return await res.json();
 }
 
-// Public: append event (immutable)
-export async function appendAuditEvent(event) {
-  await new Promise((r) => setTimeout(r, 60));
-  const rows = read();
+/**
+ * listAuditEvents({
+ *   q, type, role, dateFrom, dateTo, limit, skip
+ * })
+ */
+export async function listAuditEvents(params = {}) {
+  const qs = new URLSearchParams();
 
-  const item = {
-    id: uid(),
-    ts: new Date().toISOString(),
-    type: String(event.type || "system.event"),
-    actor: event.actor || { role: "system", email: "system@cst" },
-    entity: event.entity || { kind: "system", id: "-" },
-    message: String(event.message || ""),
-    meta: event.meta || {},
-  };
+  if (params.q) qs.set("q", params.q);
+  if (params.type && params.type !== "all") qs.set("type", params.type);
+  if (params.role && params.role !== "all") qs.set("role", params.role);
+  if (params.dateFrom) qs.set("date_from", params.dateFrom);
+  if (params.dateTo) qs.set("date_to", params.dateTo);
+  if (Number.isFinite(params.limit)) qs.set("limit", String(params.limit));
+  if (Number.isFinite(params.skip)) qs.set("skip", String(params.skip));
 
-  rows.push(item);
-  write(rows);
-  return item;
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return request(`/admin/audit${suffix}`);
 }
 
-// Helper: export CSV
+// Optional: fetch one event if your backend supports it
+export async function getAuditEvent(eventId) {
+  return request(`/admin/audit/${encodeURIComponent(eventId)}`);
+}
+
+// Export CSV from backend (recommended)
+export async function exportAuditCsv(params = {}) {
+  const qs = new URLSearchParams();
+
+  if (params.q) qs.set("q", params.q);
+  if (params.type && params.type !== "all") qs.set("type", params.type);
+  if (params.role && params.role !== "all") qs.set("role", params.role);
+  if (params.dateFrom) qs.set("date_from", params.dateFrom);
+  if (params.dateTo) qs.set("date_to", params.dateTo);
+
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  const csvText = await request(`/admin/audit/export.csv${suffix}`, {
+    headers: { Accept: "text/csv" },
+  });
+
+  return csvText;
+}
+
+/* ---------- helpers (client side) ---------- */
+
 export function auditToCSV(rows) {
   const safe = (v) => `"${String(v ?? "").replaceAll(`"`, `""`)}"`;
 
@@ -96,7 +111,7 @@ export function auditToCSV(rows) {
 
   const lines = [header.join(",")];
 
-  for (const r of rows) {
+  for (const r of rows || []) {
     lines.push(
       [
         safe(r.id),
@@ -115,7 +130,6 @@ export function auditToCSV(rows) {
   return lines.join("\n");
 }
 
-// Helper: download in browser
 export function downloadTextFile(filename, content, mime = "text/plain") {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);

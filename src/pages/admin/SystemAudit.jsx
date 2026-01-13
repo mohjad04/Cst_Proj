@@ -1,5 +1,11 @@
+// src/pages/admin/SystemAudit.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { auditToCSV, downloadTextFile, listAuditEvents } from "../../services/auditApi";
+import {
+  auditToCSV,
+  downloadTextFile,
+  listAuditEvents,
+  exportAuditCsv,
+} from "../../services/auditApi";
 
 const TYPES = [
   "auth.login",
@@ -34,12 +40,17 @@ export default function SystemAudit() {
   const [dateTo, setDateTo] = useState("");
 
   const [selected, setSelected] = useState(null);
+  const [error, setError] = useState("");
 
   async function load() {
     setLoading(true);
+    setError("");
     try {
-      const data = await listAuditEvents();
-      setRows(data);
+      const data = await listAuditEvents({ q, type, role, dateFrom, dateTo });
+      setRows(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setError(e.message || "Failed to load audit logs");
+      setRows([]);
     } finally {
       setLoading(false);
     }
@@ -47,9 +58,11 @@ export default function SystemAudit() {
 
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filtered = useMemo(() => {
+    // Backend already filters, but keep client filter as safety
     const query = q.trim().toLowerCase();
     const fromTs = dateFrom ? new Date(dateFrom + "T00:00:00").getTime() : null;
     const toTs = dateTo ? new Date(dateTo + "T23:59:59").getTime() : null;
@@ -58,7 +71,7 @@ export default function SystemAudit() {
       if (type !== "all" && e.type !== type) return false;
       if (role !== "all" && e.actor?.role !== role) return false;
 
-      const t = new Date(e.ts).getTime();
+      const t = new Date(e.time).getTime();
       if (fromTs != null && t < fromTs) return false;
       if (toTs != null && t > toTs) return false;
 
@@ -76,10 +89,19 @@ export default function SystemAudit() {
     });
   }, [rows, q, type, role, dateFrom, dateTo]);
 
-  function exportCSV() {
-    const csv = auditToCSV(filtered);
+  async function exportCSV() {
+    setError("");
     const name = `cst_audit_${new Date().toISOString().slice(0, 10)}.csv`;
-    downloadTextFile(name, csv, "text/csv");
+
+    try {
+      // Prefer backend CSV (best for big data)
+      const csv = await exportAuditCsv({ q, type, role, dateFrom, dateTo });
+      downloadTextFile(name, csv, "text/csv");
+    } catch {
+      // fallback client side
+      const csv = auditToCSV(filtered);
+      downloadTextFile(name, csv, "text/csv");
+    }
   }
 
   return (
@@ -96,7 +118,10 @@ export default function SystemAudit() {
           <button style={{ ...styles.btn, background: "#111827" }} onClick={exportCSV}>
             Export CSV
           </button>
-          <button style={{ ...styles.btn, background: "#e5e7eb", color: "#111827" }} onClick={load}>
+          <button
+            style={{ ...styles.btn, background: "#e5e7eb", color: "#111827" }}
+            onClick={load}
+          >
             Refresh
           </button>
         </div>
@@ -104,7 +129,13 @@ export default function SystemAudit() {
 
       <div style={styles.card}>
         <div style={styles.toolbar}>
-          <input style={styles.input} placeholder="Search logs..." value={q} onChange={(e) => setQ(e.target.value)} />
+          <input
+            style={styles.input}
+            placeholder="Search logs..."
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+
           <select style={styles.input} value={type} onChange={(e) => setType(e.target.value)}>
             <option value="all">All types</option>
             {TYPES.map((t) => (
@@ -123,14 +154,30 @@ export default function SystemAudit() {
             ))}
           </select>
 
-          <input style={styles.input} type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          <input style={styles.input} type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          <input
+            style={styles.input}
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+          />
+          <input
+            style={styles.input}
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+          />
         </div>
 
         <div style={{ marginTop: 10, color: "#6b7280", fontSize: 13 }}>
           Showing <b>{filtered.length}</b> of <b>{rows.length}</b> events
         </div>
       </div>
+
+      {error && (
+        <div style={{ ...styles.card, border: "1px solid #fecaca", background: "#fff1f2", color: "#991b1b" }}>
+          {error}
+        </div>
+      )}
 
       <div style={styles.card}>
         {loading ? (
@@ -152,7 +199,7 @@ export default function SystemAudit() {
                 {filtered.map((e) => (
                   <tr key={e.id}>
                     <td style={styles.td}>
-                      <div style={{ fontWeight: 900 }}>{formatDateTime(e.ts)}</div>
+                      <div style={{ fontWeight: 900 }}>{formatDateTime(e.time)}</div>
                       <div style={{ color: "#6b7280", fontSize: 12 }}>{e.id}</div>
                     </td>
                     <td style={styles.td}>
@@ -163,7 +210,7 @@ export default function SystemAudit() {
                       <div style={{ color: "#6b7280", fontSize: 12 }}>{e.actor?.email || "—"}</div>
                     </td>
                     <td style={styles.td}>
-                      <div style={{ fontWeight: 900 }}>{e.entity?.kind || "—"}</div>
+                      <div style={{ fontWeight: 900 }}>{e.entity?.type || "—"}</div>
                       <div style={{ color: "#6b7280", fontSize: 12 }}>{e.entity?.id || "—"}</div>
                     </td>
                     <td style={styles.td}>{e.message || "—"}</td>
@@ -204,52 +251,44 @@ function EventModal({ event, onClose }) {
       <div style={styles.modalCard} onMouseDown={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
           <h2 style={{ margin: 0 }}>Event Details</h2>
-          <button style={{ ...styles.smallBtn, background: "#e5e7eb", color: "#111827" }} onClick={onClose} type="button">
+          <button
+            style={{ ...styles.smallBtn, background: "#e5e7eb", color: "#111827" }}
+            onClick={onClose}
+            type="button"
+          >
             ✕
           </button>
         </div>
 
-        <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-          <Kv k="ID" v={event.id} />
-          <Kv k="Timestamp" v={event.ts} />
-          <Kv k="Type" v={event.type} />
-          <Kv k="Actor" v={`${event.actor?.role || "-"} / ${event.actor?.email || "-"}`} />
-          <Kv k="Entity" v={`${event.entity?.kind || "-"} / ${event.entity?.id || "-"}`} />
-          <Kv k="Message" v={event.message || "-"} />
-
-          <div style={{ padding: 12, border: "1px solid #e5e7eb", borderRadius: 12 }}>
-            <div style={{ fontWeight: 900, marginBottom: 8 }}>Meta (JSON)</div>
-            <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
-              {JSON.stringify(event.meta || {}, null, 2)}
-            </pre>
-          </div>
-
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <button style={{ ...styles.btn, background: "#111827" }} onClick={onClose}>
-              Close
-            </button>
-          </div>
+        <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+          <Row k="ID" v={event.id} />
+          <Row k="Timestamp" v={event.time} />
+          <Row k="Type" v={event.type} />
+          <Row k="Actor" v={`${event.actor?.role || "—"} / ${event.actor?.email || "—"}`} />
+          <Row k="Entity" v={`${event.entity?.type || "—"} / ${event.entity?.id || "—"}`} />
+          <Row k="Message" v={event.message || "—"} />
+          <Row k="Meta" v={<pre style={styles.pre}>{JSON.stringify(event.meta || {}, null, 2)}</pre>} />
         </div>
       </div>
     </div>
   );
 }
 
-function Kv({ k, v }) {
+function Row({ k, v }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 10, alignItems: "start" }}>
-      <div style={{ color: "#6b7280", fontWeight: 900 }}>{k}</div>
+    <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: 10 }}>
+      <div style={{ fontWeight: 900, color: "#374151" }}>{k}</div>
       <div style={{ color: "#111827" }}>{v}</div>
     </div>
   );
 }
 
-function formatDateTime(iso) {
+function formatDateTime(ts) {
   try {
-    const d = new Date(iso);
+    const d = new Date(ts);
     return d.toLocaleString();
   } catch {
-    return iso;
+    return ts;
   }
 }
 
@@ -317,5 +356,14 @@ const styles = {
     borderRadius: 14,
     padding: 16,
     boxShadow: "0 25px 60px rgba(0,0,0,0.25)",
+  },
+  pre: {
+    margin: 0,
+    padding: 12,
+    borderRadius: 12,
+    border: "1px solid #e5e7eb",
+    background: "#f9fafb",
+    overflowX: "auto",
+    fontSize: 12,
   },
 };
