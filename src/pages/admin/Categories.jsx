@@ -1,21 +1,26 @@
+// src/pages/admin/Categories.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  createCategory,
-  createSubcategory,
-  defaultValidation,
-  deleteCategory,
-  deleteSubcategory,
   listCategories,
-  toggleCategoryActive,
-  toggleSubcategoryActive,
+  createCategory,
   updateCategory,
+  toggleCategory,
+  deleteCategory,
+  listSubcategories,
+  createSubcategory,
   updateSubcategory,
+  toggleSubcategory,
+  deleteSubcategory,
+  defaultValidation,
 } from "../../services/categoriesApi";
 
 export default function Categories() {
-  const [data, setData] = useState([]);
-  const [activeCatId, setActiveCatId] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [cats, setCats] = useState([]);
+  const [activeCatCode, setActiveCatCode] = useState(null);
+
+  const [subs, setSubs] = useState([]);
+  const [loadingCats, setLoadingCats] = useState(true);
+  const [loadingSubs, setLoadingSubs] = useState(false);
 
   const [qCat, setQCat] = useState("");
   const [qSub, setQSub] = useState("");
@@ -31,109 +36,124 @@ export default function Categories() {
     setTimeout(() => setToast(""), 2200);
   }
 
-  async function load() {
-    setLoading(true);
+  async function loadCategories() {
+    setLoadingCats(true);
     setError("");
     try {
       const rows = await listCategories();
-      setData(rows);
-      if (!activeCatId && rows[0]?.id) setActiveCatId(rows[0].id);
-      if (activeCatId && !rows.some((c) => c.id === activeCatId)) {
-        setActiveCatId(rows[0]?.id ?? null);
-      }
+      setCats(rows || []);
+      // keep selection stable
+      setActiveCatCode((prev) => {
+        const first = rows?.[0]?.code ?? null;
+        if (!prev) return first;
+        if (!rows?.some((c) => c.code === prev)) return first;
+        return prev;
+      });
     } catch (e) {
       setError(e.message || "Failed to load categories");
     } finally {
-      setLoading(false);
+      setLoadingCats(false);
+    }
+  }
+
+  async function loadSubcategories(categoryCode) {
+    if (!categoryCode) {
+      setSubs([]);
+      return;
+    }
+    setLoadingSubs(true);
+    setError("");
+    try {
+      const rows = await listSubcategories(categoryCode);
+      setSubs(rows || []);
+    } catch (e) {
+      setSubs([]);
+      setError(e.message || "Failed to load subcategories");
+    } finally {
+      setLoadingSubs(false);
     }
   }
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadCategories();
   }, []);
+
+  useEffect(() => {
+    loadSubcategories(activeCatCode);
+  }, [activeCatCode]);
 
   const categoriesFiltered = useMemo(() => {
     const query = qCat.trim().toLowerCase();
-    return data.filter((c) => {
+    return (cats || []).filter((c) => {
       if (!query) return true;
-      return (
-        c.name.toLowerCase().includes(query) ||
-        c.code.toLowerCase().includes(query)
-      );
+      return (c.name || "").toLowerCase().includes(query) || (c.code || "").toLowerCase().includes(query);
     });
-  }, [data, qCat]);
+  }, [cats, qCat]);
 
-  const activeCategory = useMemo(() => data.find((c) => c.id === activeCatId) || null, [data, activeCatId]);
+  const activeCategory = useMemo(
+    () => (cats || []).find((c) => c.code === activeCatCode) || null,
+    [cats, activeCatCode]
+  );
 
   const subFiltered = useMemo(() => {
-    const subs = activeCategory?.subcategories || [];
     const query = qSub.trim().toLowerCase();
-    return subs.filter((s) => {
+    return (subs || []).filter((s) => {
       if (!query) return true;
-      return (
-        s.name.toLowerCase().includes(query) ||
-        s.code.toLowerCase().includes(query)
-      );
+      return (s.name || "").toLowerCase().includes(query) || (s.code || "").toLowerCase().includes(query);
     });
-  }, [activeCategory, qSub]);
+  }, [subs, qSub]);
 
-  async function onToggleCategory(catId) {
+  async function onToggleCategory(catCode) {
     setError("");
     try {
-      const updated = await toggleCategoryActive(catId);
-      setData((prev) => prev.map((c) => (c.id === catId ? updated : c)));
+      const updated = await toggleCategory(catCode);
+      setCats((prev) => prev.map((c) => (c.code === catCode ? updated : c)));
       showToast(updated.active ? "Category enabled" : "Category disabled");
     } catch (e) {
       setError(e.message || "Failed");
     }
   }
 
-  async function onDeleteCategory(catId) {
+  async function onDeleteCategory(catCode) {
     const ok = confirm("Delete this category? (must have 0 subcategories)");
     if (!ok) return;
 
     setError("");
     try {
-      await deleteCategory(catId);
-      setData((prev) => prev.filter((c) => c.id !== catId));
-      if (activeCatId === catId) setActiveCatId(null);
+      await deleteCategory(catCode);
+      setCats((prev) => prev.filter((c) => c.code !== catCode));
+      if (activeCatCode === catCode) setActiveCatCode(null);
+      setSubs([]);
       showToast("Category deleted");
     } catch (e) {
       setError(e.message || "Failed");
     }
   }
 
-  async function onToggleSub(subId) {
+  async function onToggleSub(subCode) {
+    if (!activeCatCode) return;
     setError("");
     try {
-      const updated = await toggleSubcategoryActive(activeCatId, subId);
-      setData((prev) =>
-        prev.map((c) =>
-          c.id !== activeCatId
-            ? c
-            : { ...c, subcategories: c.subcategories.map((s) => (s.id === subId ? updated : s)) }
-        )
-      );
+      const updated = await toggleSubcategory(activeCatCode, subCode);
+      setSubs((prev) => prev.map((s) => (s.code === subCode ? updated : s)));
       showToast(updated.active ? "Subcategory enabled" : "Subcategory disabled");
     } catch (e) {
       setError(e.message || "Failed");
     }
   }
 
-  async function onDeleteSub(subId) {
+  async function onDeleteSub(subCode) {
+    if (!activeCatCode) return;
     const ok = confirm("Delete this subcategory?");
     if (!ok) return;
 
     setError("");
     try {
-      await deleteSubcategory(activeCatId, subId);
-      setData((prev) =>
-        prev.map((c) =>
-          c.id !== activeCatId ? c : { ...c, subcategories: c.subcategories.filter((s) => s.id !== subId) }
-        )
-      );
+      await deleteSubcategory(activeCatCode, subCode);
+      setSubs((prev) => prev.filter((s) => s.code !== subCode));
       showToast("Subcategory deleted");
+      // refresh categories to update counts if backend exposes them
+      loadCategories();
     } catch (e) {
       setError(e.message || "Failed");
     }
@@ -150,10 +170,13 @@ export default function Categories() {
         </div>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <button style={{ ...styles.btn, background: "#111827" }} onClick={() => setCatModal({ open: true, mode: "create", item: null })}>
+          <button
+            style={{ ...styles.btn, background: "#111827" }}
+            onClick={() => setCatModal({ open: true, mode: "create", item: null })}
+          >
             + Add Category
           </button>
-          <button style={{ ...styles.btn, background: "#e5e7eb", color: "#111827" }} onClick={load}>
+          <button style={{ ...styles.btn, background: "#e5e7eb", color: "#111827" }} onClick={loadCategories}>
             Refresh
           </button>
         </div>
@@ -181,26 +204,27 @@ export default function Categories() {
             onChange={(e) => setQCat(e.target.value)}
           />
 
-          {loading ? (
+          {loadingCats ? (
             <div style={{ padding: 12 }}>Loading…</div>
           ) : (
             <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
               {categoriesFiltered.map((c) => (
                 <div
-                  key={c.id}
+                  key={c.code}
                   style={{
                     ...styles.itemRow,
-                    borderColor: c.id === activeCatId ? "#111827" : "rgba(17,24,39,0.08)",
+                    borderColor: c.code === activeCatCode ? "#111827" : "rgba(17,24,39,0.10)",
                   }}
-                  onClick={() => setActiveCatId(c.id)}
+                  onClick={() => setActiveCatCode(c.code)}
                 >
                   <div>
                     <div style={{ fontWeight: 900 }}>{c.name}</div>
                     <div style={{ color: "#6b7280", fontSize: 12 }}>code: {c.code}</div>
                     <div style={{ color: "#6b7280", fontSize: 12 }}>
-                      subcategories: {(c.subcategories || []).length}
+                      subcategories: {c.subcategories_count ?? subsCountFallback(c, subs, activeCatCode)}
                     </div>
                   </div>
+
                   <div style={{ display: "grid", gap: 8, justifyItems: "end" }}>
                     <span
                       style={{
@@ -222,20 +246,22 @@ export default function Categories() {
                       >
                         Edit
                       </button>
+
                       <button
                         style={{ ...styles.smallBtn, background: c.active ? "#fee2e2" : "#dcfce7", color: "#111827" }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          onToggleCategory(c.id);
+                          onToggleCategory(c.code);
                         }}
                       >
                         {c.active ? "Disable" : "Enable"}
                       </button>
+
                       <button
                         style={{ ...styles.smallBtn, background: "#111827", color: "white" }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          onDeleteCategory(c.id);
+                          onDeleteCategory(c.code);
                         }}
                       >
                         Delete
@@ -281,6 +307,8 @@ export default function Categories() {
 
           {!activeCategory ? (
             <div style={{ padding: 12, color: "#6b7280" }}>Pick a category from the left.</div>
+          ) : loadingSubs ? (
+            <div style={{ padding: 12, color: "#6b7280" }}>Loading subcategories…</div>
           ) : (
             <div style={{ marginTop: 10, overflowX: "auto" }}>
               <table style={styles.table}>
@@ -295,10 +323,9 @@ export default function Categories() {
                 </thead>
                 <tbody>
                   {subFiltered.map((s) => (
-                    <tr key={s.id}>
+                    <tr key={s.code}>
                       <td style={styles.td}>
                         <div style={{ fontWeight: 900 }}>{s.name}</div>
-                        <div style={{ color: "#6b7280", fontSize: 12 }}>ID: {s.id}</div>
                       </td>
                       <td style={styles.td}>{s.code}</td>
                       <td style={styles.td}>
@@ -325,13 +352,13 @@ export default function Categories() {
                           </button>
                           <button
                             style={{ ...styles.smallBtn, background: s.active ? "#fee2e2" : "#dcfce7", color: "#111827" }}
-                            onClick={() => onToggleSub(s.id)}
+                            onClick={() => onToggleSub(s.code)}
                           >
                             {s.active ? "Disable" : "Enable"}
                           </button>
                           <button
                             style={{ ...styles.smallBtn, background: "#111827", color: "white" }}
-                            onClick={() => onDeleteSub(s.id)}
+                            onClick={() => onDeleteSub(s.code)}
                           >
                             Delete
                           </button>
@@ -366,12 +393,13 @@ export default function Categories() {
             try {
               if (catModal.mode === "create") {
                 const created = await createCategory(payload);
-                setData((prev) => [created, ...prev]);
-                if (!activeCatId) setActiveCatId(created.id);
+                setCats((prev) => [created, ...prev]);
+                setActiveCatCode((prev) => prev || created.code);
                 showToast("Category created");
               } else {
-                const updated = await updateCategory(catModal.item.id, payload);
-                setData((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+                // IMPORTANT: code is identifier -> if user edits code, treat carefully (usually you should NOT allow code edit)
+                const updated = await updateCategory(catModal.item.code, { name: payload.name });
+                setCats((prev) => prev.map((c) => (c.code === catModal.item.code ? updated : c)));
                 showToast("Category updated");
               }
               setCatModal({ open: false, mode: "create", item: null });
@@ -398,27 +426,13 @@ export default function Categories() {
             setError("");
             try {
               if (subModal.mode === "create") {
-                const created = await createSubcategory(activeCategory.id, payload);
-                setData((prev) =>
-                  prev.map((c) =>
-                    c.id !== activeCategory.id
-                      ? c
-                      : { ...c, subcategories: [created, ...(c.subcategories || [])] }
-                  )
-                );
+                const created = await createSubcategory(activeCategory.code, payload);
+                setSubs((prev) => [created, ...prev]);
                 showToast("Subcategory created");
+                loadCategories(); // refresh counts
               } else {
-                const updated = await updateSubcategory(activeCategory.id, subModal.item.id, payload);
-                setData((prev) =>
-                  prev.map((c) =>
-                    c.id !== activeCategory.id
-                      ? c
-                      : {
-                          ...c,
-                          subcategories: c.subcategories.map((s) => (s.id === updated.id ? updated : s)),
-                        }
-                  )
-                );
+                const updated = await updateSubcategory(activeCategory.code, subModal.item.code, payload);
+                setSubs((prev) => prev.map((s) => (s.code === subModal.item.code ? updated : s)));
                 showToast("Subcategory updated");
               }
               setSubModal({ open: false, mode: "create", item: null });
@@ -430,6 +444,14 @@ export default function Categories() {
       )}
     </div>
   );
+}
+
+/* ---------- helpers ---------- */
+
+function subsCountFallback(cat, subs, activeCatCode) {
+  // if backend doesn't send subcategories_count, show current loaded count for active category, else 0
+  if (cat?.code === activeCatCode) return subs?.length ?? 0;
+  return 0;
 }
 
 /* ---------- Modals ---------- */
@@ -463,8 +485,15 @@ function CategoryModal({ title, submitLabel, initial, onClose, onSubmit }) {
         <Field label="Category name">
           <input style={styles.input} value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
+
         <Field label="Code (used in API & DB)">
-          <input style={styles.input} value={code} onChange={(e) => setCode(e.target.value)} placeholder="example: roads" />
+          <input
+            style={styles.input}
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="example: roads"
+            disabled={!!initial.code} // disable editing code on edit (safer)
+          />
         </Field>
 
         {err && <ErrorBox text={err} />}
@@ -507,7 +536,13 @@ function SubcategoryModal({ title, submitLabel, initial, onClose, onSubmit }) {
             <input style={styles.input} value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
           <Field label="Code (used in API & ML)">
-            <input style={styles.input} value={code} onChange={(e) => setCode(e.target.value)} placeholder="example: pothole" />
+            <input
+              style={styles.input}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="example: pothole"
+              disabled={!!initial.code} // safer on edit
+            />
           </Field>
         </div>
 
@@ -521,9 +556,7 @@ function SubcategoryModal({ title, submitLabel, initial, onClose, onSubmit }) {
                 type="number"
                 min={0}
                 value={validation.min_description_len ?? 0}
-                onChange={(e) =>
-                  setValidation((v) => ({ ...v, min_description_len: Number(e.target.value || 0) }))
-                }
+                onChange={(e) => setValidation((v) => ({ ...v, min_description_len: Number(e.target.value || 0) }))}
               />
             </Field>
 
@@ -589,9 +622,15 @@ function ValidationPreview({ v }) {
   if (!v) return <span style={{ color: "#6b7280" }}>—</span>;
   return (
     <div style={{ display: "grid", gap: 4, fontSize: 13, color: "#374151" }}>
-      <div>Required: <b>{(v.required_fields || []).join(", ") || "—"}</b></div>
-      <div>Attachments: <b>{v.attachments?.min ?? 0}</b> to <b>{v.attachments?.max ?? 0}</b></div>
-      <div>Min desc len: <b>{v.min_description_len ?? 0}</b></div>
+      <div>
+        Required: <b>{(v.required_fields || []).join(", ") || "—"}</b>
+      </div>
+      <div>
+        Attachments: <b>{v.attachments?.min ?? 0}</b> to <b>{v.attachments?.max ?? 0}</b>
+      </div>
+      <div>
+        Min desc len: <b>{v.min_description_len ?? 0}</b>
+      </div>
     </div>
   );
 }
@@ -642,6 +681,8 @@ function ErrorBox({ text }) {
   );
 }
 
+/* ---------- styles ---------- */
+
 const styles = {
   headerRow: {
     display: "flex",
@@ -682,15 +723,20 @@ const styles = {
     cursor: "pointer",
     fontWeight: 800,
   },
+
+  // avoid React warning by not mixing border + borderColor:
   itemRow: {
     display: "flex",
     justifyContent: "space-between",
     gap: 12,
     padding: 12,
     borderRadius: 14,
-    border: "1px solid rgba(17,24,39,0.08)",
+    borderStyle: "solid",
+    borderWidth: 1,
+    borderColor: "rgba(17,24,39,0.10)",
     cursor: "pointer",
   },
+
   table: { width: "100%", borderCollapse: "collapse" },
   th: { textAlign: "left", padding: "10px 8px", borderBottom: "1px solid #e5e7eb", color: "#374151", fontSize: 13 },
   td: { padding: "10px 8px", borderBottom: "1px solid #e5e7eb", fontSize: 14, verticalAlign: "top" },
@@ -701,7 +747,9 @@ const styles = {
     borderRadius: 999,
     fontSize: 12,
     background: "#eef2ff",
-    border: "1px solid #e0e7ff",
+    borderStyle: "solid",
+    borderWidth: 1,
+    borderColor: "#e0e7ff",
   },
   modalOverlay: {
     position: "fixed",
