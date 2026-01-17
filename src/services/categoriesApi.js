@@ -12,7 +12,7 @@ async function http(path, opts = {}) {
     try {
       const data = await res.json();
       msg = data.detail || JSON.stringify(data);
-    } catch {}
+    } catch { }
     throw new Error(msg);
   }
 
@@ -48,7 +48,7 @@ export async function toggleCategory(code) {
 }
 
 export async function deleteCategory(code) {
-  return http(`/admin/categories/${code}`, { method: "DELETE" });
+  return http(`/admin/categories/${code}/delete`, { method: "POST" });
 }
 
 /* Subcategories */

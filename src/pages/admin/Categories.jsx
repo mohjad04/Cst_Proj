@@ -158,9 +158,42 @@ export default function Categories() {
                   }}
                   onClick={() => setActiveCatId(c.id)}
                 >
-                  <div style={{ fontWeight: 900 }}>{c.name}</div>
+                  {/* LEFT: name + count */}
+                  <div>
+                    <div style={{ fontWeight: 900 }}>{c.name}</div>
+                    <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+                      {c.subcategories_count} subcategories
+                    </div>
+                  </div>
+
+                  {/* RIGHT: delete button */}
+                  <button
+                    style={{
+                      ...styles.smallBtn,
+                      background: c.subcategories_count > 0 ? "#e5e7eb" : "#fee2e2",
+                      color: "#111827",
+                      cursor: c.subcategories_count > 0 ? "not-allowed" : "pointer",
+                    }}
+                    disabled={c.subcategories_count > 0}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+
+                      if (!confirm("Delete this category?")) return;
+
+                      try {
+                        await deleteCategory(c.id);
+                        showToast("Category deleted");
+                        loadCategories();
+                      } catch (err) {
+                        setError(err.message || "Failed to delete category");
+                      }
+                    }}
+                  >
+                    Delete
+                  </button>
                 </div>
               ))}
+
             </div>
           )}
         </div>
@@ -208,24 +241,43 @@ export default function Categories() {
                 {subFiltered.map((s) => (
                   <tr key={s.id}>
                     <td style={styles.td}>{s.name}</td>
+
                     <td style={styles.td}>{s.priority}</td>
+
                     <td style={styles.td}>
-                      <span style={styles.badge}>{s.active ? "Active" : "Disabled"}</span>
+                      <span
+                        style={{
+                          ...styles.badge,
+                          background: s.active ? "#ecfeff" : "#fef2f2",
+                          borderColor: s.active ? "#a5f3fc" : "#fecaca",
+                        }}
+                      >
+                        {s.active ? "Active" : "Disabled"}
+                      </span>
                     </td>
+
                     <td style={styles.td}>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                         <button
-                          style={{ ...styles.smallBtn, background: "#e5e7eb" }}
-                          onClick={() => setSubModal({ controversies: false, open: true, mode: "edit", item: s })}
+                          style={{ ...styles.smallBtn, background: "#e5e7eb", color: "#111827" }}
+                          onClick={() =>
+                            setSubModal({ open: true, mode: "edit", item: s })
+                          }
                         >
                           Edit
                         </button>
+
                         <button
-                          style={{ ...styles.smallBtn, background: "#fee2e2" }}
+                          style={{
+                            ...styles.smallBtn,
+                            background: s.active ? "#fecaca" : "#dcfce7",
+                            color: "#111827",
+                          }}
                           onClick={() => onToggleSub(s.id)}
                         >
-                          Toggle
+                          {s.active ? "Disable" : "Enable"}
                         </button>
+
                         <button
                           style={{ ...styles.smallBtn, background: "#111827", color: "white" }}
                           onClick={() => onDeleteSub(s.id)}
@@ -237,6 +289,7 @@ export default function Categories() {
                   </tr>
                 ))}
               </tbody>
+
             </table>
           )}
         </div>

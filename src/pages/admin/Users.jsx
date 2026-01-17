@@ -11,6 +11,7 @@ const ROLES = [
   { value: "all", label: "All roles" },
   { value: "admin", label: "Admin" },
   { value: "staff", label: "Office Employee" },
+  { value: "citizen", label: "Citizen" },
 ];
 
 const STATUS = [
@@ -70,7 +71,7 @@ export default function Users() {
   }, [rows, q, role, status]);
 
   function roleLabel(r) {
-    return r === "admin" ? "Admin" : "Office Employee";
+    return r === "admin" ? "Admin" : r === "staff" ? "Office Employee" : "Citizen";
   }
 
   function showToast(msg) {
@@ -185,7 +186,6 @@ export default function Users() {
                   <th style={styles.th}>Role</th>
                   <th style={styles.th}>Status</th>
                   <th style={styles.th}>Created</th>
-                  <th style={styles.th}>Last login</th>
                   <th style={styles.th}></th>
                 </tr>
               </thead>
@@ -212,7 +212,6 @@ export default function Users() {
                       </span>
                     </td>
                     <td style={styles.td}>{u.created_at || "—"}</td>
-                    <td style={styles.td}>{u.last_login_at || "—"}</td>
                     <td style={styles.td}>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                         <button style={{ ...styles.btn, background: "#e5e7eb", color: "#111827" }} onClick={() => openEdit(u)}>
