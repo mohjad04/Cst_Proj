@@ -15,8 +15,8 @@ const ROLES = [
 
 const STATUS = [
   { value: "all", label: "All status" },
-  { value: "active", label: "Active" },
-  { value: "disabled", label: "Disabled" },
+  { value: "true", label: "Active" },
+  { value: "false", label: "Disabled" },
 ];
 
 export default function Users() {
@@ -57,8 +57,8 @@ export default function Users() {
     return rows
       .filter((u) => {
         if (role !== "all" && u.role !== role) return false;
-        if (status === "active" && !u.active) return false;
-        if (status === "disabled" && u.active) return false;
+        if (status === "true" && !u.is_active) return false;
+        if (status === "false" && u.is_active) return false;
         if (!query) return true;
         return (
           u.full_name.toLowerCase().includes(query) ||
@@ -83,7 +83,7 @@ export default function Users() {
     try {
       const updated = await toggleUserActive(userId);
       setRows((prev) => prev.map((u) => (u.id === userId ? updated : u)));
-      showToast(updated.active ? "User enabled" : "User disabled");
+      showToast(updated.is_active ? "User enabled" : "User disabled");
     } catch (e) {
       setError(e.message || "Failed");
     }
@@ -114,7 +114,6 @@ export default function Users() {
         <div>
           <h1 style={{ margin: 0 }}>Users</h1>
           <div style={{ color: "#6b7280", marginTop: 6 }}>
-            Create/manage <b>Admin</b> & <b>Office Employee</b> accounts (basic RBAC).
           </div>
         </div>
 
@@ -205,11 +204,11 @@ export default function Users() {
                       <span
                         style={{
                           ...styles.badge,
-                          background: u.active ? "#ecfeff" : "#fef2f2",
-                          borderColor: u.active ? "#a5f3fc" : "#fecaca",
+                          background: u.is_active ? "#ecfeff" : "#fef2f2",
+                          borderColor: u.is_active ? "#a5f3fc" : "#fecaca",
                         }}
                       >
-                        {u.active ? "Active" : "Disabled"}
+                        {u.is_active ? "Active" : "Disabled"}
                       </span>
                     </td>
                     <td style={styles.td}>{u.created_at || "—"}</td>
@@ -220,10 +219,10 @@ export default function Users() {
                           Edit
                         </button>
                         <button
-                          style={{ ...styles.btn, background: u.active ? "#fee2e2" : "#dcfce7", color: "#111827" }}
+                          style={{ ...styles.btn, background: u.is_active ? "#fee2e2" : "#dcfce7", color: "#111827" }}
                           onClick={() => onToggleActive(u.id)}
                         >
-                          {u.active ? "Disable" : "Enable"}
+                          {u.is_active ? "Disable" : "Enable"}
                         </button>
                         <button style={{ ...styles.btn, background: "#111827" }} onClick={() => onDelete(u.id)}>
                           Delete
@@ -300,6 +299,8 @@ function UserModal({ title, submitLabel, initial, onClose, onSubmit }) {
   const [role, setRole] = useState(initial.role);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [password, setPassword] = useState("");
+
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -310,12 +311,19 @@ function UserModal({ title, submitLabel, initial, onClose, onSubmit }) {
 
     setBusy(true);
     try {
-      await onSubmit({ full_name, email, role });
+      const payload = { full_name, email, role };
+      if (title === "Add User") payload.password = password;
+
+      await onSubmit(payload);
     } catch (e2) {
       setErr(e2.message || "Failed");
     } finally {
       setBusy(false);
     }
+    if (title === "Add User" && password.length > 72) {
+      return setErr("Password must be 72 characters or less");
+    }
+
   }
 
   return (
@@ -338,6 +346,19 @@ function UserModal({ title, submitLabel, initial, onClose, onSubmit }) {
             <label style={styles.label}>Email</label>
             <input style={styles.input} value={email} onChange={(e) => setEmail(e.target.value)} />
           </div>
+
+          {title === "Add User" && (
+            <div>
+              <label style={styles.label}>Password</label>
+              <input
+                type="password"
+                style={styles.input}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+          )}
 
           <div>
             <label style={styles.label}>Role</label>
