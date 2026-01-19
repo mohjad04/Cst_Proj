@@ -7,11 +7,14 @@ import {
   toggleTeamActive,
 } from "../../services/agentsApi";
 import { listUsers } from "../../services/usersApi";
+import { listSkillsFromCategories } from "../../services/skillsApi";
+
 
 
 const SHIFT_OPTIONS = ["Day", "Night", "24/7"];
 const SAMPLE_ZONES = ["ZONE-DT-01", "ZONE-W-02", "ZONE-N-03", "ZONE-S-04"];
-const SAMPLE_SKILLS = ["pothole", "asphalt_damage", "water_leak", "missed_trash", "street_light"];
+// const SAMPLE_SKILLS = ["pothole", "asphalt_damage", "water_leak", "missed_trash", "street_light"];
+
 
 export default function Teams() {
   const [teams, setTeams] = useState([]);
@@ -25,6 +28,7 @@ export default function Teams() {
   const [error, setError] = useState("");
 
   const [teamModal, setTeamModal] = useState({ open: false, mode: "create", item: null });
+  const [skillsOptions, setSkillsOptions] = useState([]);
 
   function showToast(msg) {
     setToast(msg);
@@ -50,7 +54,12 @@ export default function Teams() {
 
   useEffect(() => {
     load();
+
+    listSkillsFromCategories()
+      .then(setSkillsOptions)
+      .catch(console.error);
   }, []);
+
 
   const teamsFiltered = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -62,10 +71,14 @@ export default function Teams() {
         t.name.toLowerCase().includes(query) ||
         (t.shift || "").toLowerCase().includes(query) ||
         (t.zones || []).join(",").toLowerCase().includes(query) ||
-        (t.skills || []).join(",").toLowerCase().includes(query)
+        (t.skills || [])
+          .map((v) => skillsOptions.find((s) => s.value === v)?.label || "")
+          .join(",")
+          .toLowerCase()
+          .includes(query)
       );
     });
-  }, [teams, q, status]);
+  }, [teams, q, status, skillsOptions]);
 
   async function onToggleTeam(teamId) {
     setError("");
@@ -153,10 +166,12 @@ export default function Teams() {
           <TeamsTable
             rows={teamsFiltered}
             staff={staff}
+            skillsOptions={skillsOptions}
             onEdit={(t) => setTeamModal({ open: true, mode: "edit", item: t })}
             onToggle={onToggleTeam}
             onDelete={onDeleteTeam}
           />
+
         )}
       </div>
 
@@ -165,6 +180,7 @@ export default function Teams() {
           title={teamModal.mode === "create" ? "Add Team" : "Edit Team"}
           submitLabel={teamModal.mode === "create" ? "Create" : "Save"}
           staff={staff}
+          skillsOptions={skillsOptions}   // ✅ ADD THIS
           initial={
             teamModal.item || {
               name: "",
@@ -200,7 +216,7 @@ export default function Teams() {
 
 /* ---------- TABLE ---------- */
 
-function TeamsTable({ rows, staff, onEdit, onToggle, onDelete }) {
+function TeamsTable({ rows, staff, skillsOptions, onEdit, onToggle, onDelete }) {
   const emailOf = (id) => staff.find((u) => u.id === id)?.email || "—";
 
   return (
@@ -229,7 +245,14 @@ function TeamsTable({ rows, staff, onEdit, onToggle, onDelete }) {
                   : t.members.map((id) => <div key={id}>{emailOf(id)}</div>)}
               </td>
               <td style={styles.td}>{(t.zones || []).join(", ") || "—"}</td>
-              <td style={styles.td}>{(t.skills || []).join(", ") || "—"}</td>
+              <td style={styles.td}>
+                {(t.skills || [])
+                  .map(
+                    (v) =>
+                      skillsOptions.find((s) => s.value === v)?.label || v
+                  )
+                  .join(", ") || "—"}
+              </td>
               <td style={styles.td}>
                 <span style={styles.badge}>{t.shift}</span>
               </td>
@@ -283,7 +306,15 @@ function TeamsTable({ rows, staff, onEdit, onToggle, onDelete }) {
 
 /* ---------- MODAL ---------- */
 
-function TeamModal({ title, submitLabel, initial, staff, onClose, onSubmit }) {
+function TeamModal({
+  title,
+  submitLabel,
+  initial,
+  staff,
+  skillsOptions,   // ✅ ADD THIS
+  onClose,
+  onSubmit
+}) {
   const [name, setName] = useState(initial.name);
   const [members, setMembers] = useState(initial.members);
   const [zones, setZones] = useState(initial.zones);
@@ -340,7 +371,7 @@ function TeamModal({ title, submitLabel, initial, staff, onClose, onSubmit }) {
 
           <Field label="Coverage zones">
             <div style={styles.boxedField}>
-              <MultiSelect
+              <ZoneMultiSelect
                 options={SAMPLE_ZONES}
                 values={zones}
                 onChange={setZones}
@@ -353,7 +384,7 @@ function TeamModal({ title, submitLabel, initial, staff, onClose, onSubmit }) {
             <div style={styles.boxedField}>
 
               <SkillMultiSelect
-                options={SAMPLE_SKILLS}
+                options={skillsOptions}
                 values={skills}
                 onChange={setSkills}
               />
@@ -457,64 +488,6 @@ function ErrorBox({ text }) {
   );
 }
 
-function MultiSelect({ options, values, onChange }) {
-  const [pick, setPick] = useState("");
-
-  function add() {
-    if (!pick || values.includes(pick)) return;
-    onChange([...values, pick]);
-    setPick("");
-  }
-
-  function remove(v) {
-    onChange(values.filter((x) => x !== v));
-  }
-
-  return (
-    <div style={{ display: "grid", gap: 8 }}>
-      <div style={{ display: "flex", gap: 8, width: "100%" }}>
-        <select style={{ ...styles.input, flex: 1 }} value={pick} onChange={(e) => setPick(e.target.value)}>
-          <option value="">Select...</option>
-          {options.map((o) =>
-            typeof o === "string" ? (
-              <option key={o} value={o}>{o}</option>
-            ) : (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            )
-          )}
-        </select>
-        <button type="button" style={{ ...styles.btn, background: "#111827" }} onClick={add}>
-          Add
-        </button>
-      </div>
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {values.length === 0 ? (
-          <span style={{ color: "#6b7280", fontSize: 13 }}>None selected</span>
-        ) : (
-          values.map((v) => {
-            const label =
-              typeof options[0] === "string"
-                ? v
-                : options.find((o) => o.value === v)?.label;
-            return (
-              <span key={v} style={{ ...styles.badge, background: "#f9fafb", borderColor: "#e5e7eb" }}>
-                {label}
-                <button
-                  type="button"
-                  onClick={() => remove(v)}
-                  style={{ border: "none", background: "transparent", cursor: "pointer", marginLeft: 6 }}
-                >
-                  ✕
-                </button>
-              </span>
-            );
-          })
-        )}
-      </div>
-    </div>
-  );
-}
 function SkillMultiSelect({ options, values, onChange }) {
   const [input, setInput] = useState("");
 
@@ -548,7 +521,77 @@ function SkillMultiSelect({ options, values, onChange }) {
 
         <datalist id="skills-list">
           {options.map((s) => (
-            <option key={s} value={s} />
+            <option key={s.value} value={s.label}>
+              {s.label}
+            </option>
+          ))}
+        </datalist>
+
+
+        <button
+          type="button"
+          style={{ ...styles.btn, background: "#111827" }}
+          onClick={add}
+        >
+          Add
+        </button>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {values.length === 0 ? (
+          <span style={{ color: "#6b7280", fontSize: 13 }}>None selected</span>
+        ) : (
+          values.map((v) => (
+            <span key={v} style={{ ...styles.badge }}>
+              {v}
+              <button
+                type="button"
+                onClick={() => remove(v)}
+                style={{ marginLeft: 6, border: "none", background: "transparent" }}
+              >
+                ✕
+              </button>
+            </span>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+function ZoneMultiSelect({ options, values, onChange }) {
+  const [input, setInput] = useState("");
+
+  function add() {
+    const v = input.trim();
+    if (!v || values.includes(v)) return;
+    onChange([...values, v]);
+    setInput("");
+  }
+
+  function remove(v) {
+    onChange(values.filter((x) => x !== v));
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          style={{ ...styles.input, flex: 1 }}
+          placeholder="Type or select zone…"
+          list="zones-list"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+        />
+
+        <datalist id="zones-list">
+          {options.map((z) => (
+            <option key={z} value={z} />
           ))}
         </datalist>
 

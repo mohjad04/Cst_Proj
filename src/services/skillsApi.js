@@ -1,10 +1,6 @@
 // src/services/skillsApi.js
-// Skills API (Categories + Subcategories for Teams)
 
-const API_BASE =
-    import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
-
-/* ---------- auth helpers (same as auditApi) ---------- */
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 function getAuth() {
     const raw = sessionStorage.getItem("cst_auth_v1");
@@ -18,48 +14,42 @@ function getAuth() {
 
 function authHeader() {
     const auth = getAuth();
-    const token = auth?.access_token || auth?.token || auth?.accessToken;
+    const token = auth?.access_token || auth?.token;
     return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function request(path, { method = "GET", headers = {}, body } = {}) {
+async function request(path) {
     const res = await fetch(`${API_BASE}${path}`, {
-        method,
         headers: {
             "Content-Type": "application/json",
             ...authHeader(),
-            ...headers,
         },
-        body: body ? JSON.stringify(body) : undefined,
     });
 
     if (!res.ok) {
-        let msg = `Request failed (${res.status})`;
-        try {
-            const data = await res.json();
-            msg = data?.detail || data?.message || msg;
-        } catch {
-            // ignore
-        }
-        throw new Error(msg);
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || "Request failed");
     }
 
-    return await res.json();
+    return res.json();
 }
 
-/* ---------- API ---------- */
+// 🔥 MAIN FUNCTION
+export async function listSkillsFromCategories() {
+    const categories = await request("/admin/categories");
 
-/**
- * Returns skills grouped by category
- * [
- *   {
- *     category: "Roads",
- *     items: [
- *       { id: "696b...", label: "Pothole" }
- *     ]
- *   }
- * ]
- */
-export async function listSkills() {
-    return request("/admin/skills");
+    const skills = [];
+
+    for (const c of categories) {
+        const subs = await request(`/admin/categories/${c.id}/subcategories`);
+
+        for (const s of subs) {
+            skills.push({
+                value: `${c.id}:${s.id}`, // unique
+                label: `${c.name} → ${s.name}`,
+            });
+        }
+    }
+
+    return skills;
 }
