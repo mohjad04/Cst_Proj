@@ -1,16 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  createSlaPolicy,
-  deleteSlaPolicy,
-  listSlaPolicies,
-  toggleSlaActive,
-  updateSlaPolicy,
-} from "../../services/slaApi";
 
-// keep them simple for now (later: fetch from Zones/Teams/Categories)
-const ZONES = ["ZONE-DT-01", "ZONE-W-02", "ZONE-N-03", "ZONE-S-04"];
-const PRIORITIES = ["P1", "P2", "P3"];
+
+import { getSlaRules } from "../../services/slaApi";
+import { listTeamsByZone } from "../../services/agentsApi";
+
+
 const ACTIONS = ["notify_dispatcher", "notify_manager", "notify_admin", "create_ticket"];
+
 
 const CATEGORIES = [
   { category_code: "roads", subs: ["pothole", "asphalt_damage", "street_light"] },
@@ -18,306 +14,15 @@ const CATEGORIES = [
   { category_code: "waste", subs: ["missed_trash"] },
 ];
 
-export default function SlaMonitoring() {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  const [q, setQ] = useState("");
-  const [zone, setZone] = useState("all");
-  const [priority, setPriority] = useState("all");
-  const [status, setStatus] = useState("all");
-
-  const [toast, setToast] = useState("");
-  const [error, setError] = useState("");
-
-  const [modal, setModal] = useState({ open: false, mode: "create", item: null });
-
-  function showToast(msg) {
-    setToast(msg);
-    setTimeout(() => setToast(""), 2200);
-  }
-
-  async function load() {
-    setLoading(true);
-    setError("");
-    try {
-      const data = await listSlaPolicies();
-      setRows(data);
-    } catch (e) {
-      setError(e.message || "Failed to load SLA policies");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    load();
-  }, []);
-
-  const filtered = useMemo(() => {
-    const query = q.trim().toLowerCase();
-    return rows.filter((p) => {
-      if (zone !== "all" && p.zone !== zone) return false;
-      if (priority !== "all" && p.priority !== priority) return false;
-      if (status === "active" && !p.active) return false;
-      if (status === "disabled" && p.active) return false;
-
-      if (!query) return true;
-      return (
-        p.name.toLowerCase().includes(query) ||
-        p.zone.toLowerCase().includes(query) ||
-        p.priority.toLowerCase().includes(query) ||
-        p.category_code.toLowerCase().includes(query) ||
-        p.subcategory_code.toLowerCase().includes(query)
-      );
-    });
-  }, [rows, q, zone, priority, status]);
-
-  async function onToggle(id) {
-    setError("");
-    try {
-      const updated = await toggleSlaActive(id);
-      setRows((prev) => prev.map((x) => (x.id === id ? updated : x)));
-      showToast(updated.active ? "Policy enabled" : "Policy disabled");
-    } catch (e) {
-      setError(e.message || "Failed");
-    }
-  }
-
-  async function onDelete(id) {
-    const ok = confirm("Delete this SLA policy?");
-    if (!ok) return;
-
-    setError("");
-    try {
-      await deleteSlaPolicy(id);
-      setRows((prev) => prev.filter((x) => x.id !== id));
-      showToast("Policy deleted");
-    } catch (e) {
-      setError(e.message || "Failed");
-    }
-  }
-
-  return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <div style={styles.headerRow}>
-        <div>
-          <h1 style={{ margin: 0 }}>SLA Policies</h1>
-          <div style={{ color: "#6b7280", marginTop: 6 }}>
-            Configure SLA targets and escalation steps by zone/category/priority.
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <button style={{ ...styles.btn, background: "#111827" }} onClick={() => setModal({ open: true, mode: "create", item: null })}>
-            + Add Policy
-          </button>
-          <button style={{ ...styles.btn, background: "#e5e7eb", color: "#111827" }} onClick={load}>
-            Refresh
-          </button>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div style={styles.card}>
-        <div style={styles.toolbar}>
-          <input style={styles.input} placeholder="Search policies..." value={q} onChange={(e) => setQ(e.target.value)} />
-
-          <select style={styles.input} value={zone} onChange={(e) => setZone(e.target.value)}>
-            <option value="all">All zones</option>
-            {ZONES.map((z) => (
-              <option key={z} value={z}>
-                {z}
-              </option>
-            ))}
-          </select>
-
-          <select style={styles.input} value={priority} onChange={(e) => setPriority(e.target.value)}>
-            <option value="all">All priorities</option>
-            {PRIORITIES.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-
-          <select style={styles.input} value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="all">All status</option>
-            <option value="active">Active</option>
-            <option value="disabled">Disabled</option>
-          </select>
-        </div>
-
-        <div style={{ marginTop: 10, color: "#6b7280", fontSize: 13 }}>
-          Showing <b>{filtered.length}</b> of <b>{rows.length}</b> policies
-        </div>
-      </div>
-
-      {error && (
-        <div style={{ ...styles.card, border: "1px solid #fecaca", background: "#fff1f2", color: "#991b1b" }}>
-          {error}
-        </div>
-      )}
-      {toast && (
-        <div style={{ ...styles.card, border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#166534" }}>
-          {toast}
-        </div>
-      )}
-
-      {/* Table */}
-      <div style={styles.card}>
-        {loading ? (
-          <div style={{ padding: 12 }}>Loading…</div>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>Policy</th>
-                  <th style={styles.th}>Match</th>
-                  <th style={styles.th}>Targets</th>
-                  <th style={styles.th}>Escalation</th>
-                  <th style={styles.th}>Status</th>
-                  <th style={styles.th}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((p) => (
-                  <tr key={p.id}>
-                    <td style={styles.td}>
-                      <div style={{ fontWeight: 900 }}>{p.name}</div>
-                      <div style={{ color: "#6b7280", fontSize: 12 }}>ID: {p.id}</div>
-                    </td>
-                    <td style={styles.td}>
-                      <div style={{ display: "grid", gap: 4, fontSize: 13 }}>
-                        <div><b>Zone:</b> {p.zone}</div>
-                        <div><b>Category:</b> {p.category_code} / {p.subcategory_code}</div>
-                        <div><b>Priority:</b> {p.priority}</div>
-                      </div>
-                    </td>
-                    <td style={styles.td}>
-                      <div style={{ display: "grid", gap: 4, fontSize: 13 }}>
-                        <div>Target: <b>{p.target_hours}h</b></div>
-                        <div>Breach: <b>{p.breach_threshold_hours}h</b></div>
-                      </div>
-                    </td>
-                    <td style={styles.td}>
-                      <StepsPreview steps={p.escalation_steps} />
-                    </td>
-                    <td style={styles.td}>
-                      <span
-                        style={{
-                          ...styles.badge,
-                          background: p.active ? "#ecfeff" : "#fef2f2",
-                          borderColor: p.active ? "#a5f3fc" : "#fecaca",
-                        }}
-                      >
-                        {p.active ? "Active" : "Disabled"}
-                      </span>
-                    </td>
-                    <td style={styles.td}>
-                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                        <button
-                          style={{ ...styles.smallBtn, background: "#e5e7eb", color: "#111827" }}
-                          onClick={() => setModal({ open: true, mode: "edit", item: p })}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          style={{ ...styles.smallBtn, background: p.active ? "#fee2e2" : "#dcfce7", color: "#111827" }}
-                          onClick={() => onToggle(p.id)}
-                        >
-                          {p.active ? "Disable" : "Enable"}
-                        </button>
-                        <button style={{ ...styles.smallBtn, background: "#111827", color: "white" }} onClick={() => onDelete(p.id)}>
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-
-                {filtered.length === 0 && (
-                  <tr>
-                    <td style={styles.td} colSpan={6}>
-                      <div style={{ padding: 12, color: "#6b7280" }}>No SLA policies match filters.</div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Modal */}
-      {modal.open && (
-        <SlaModal
-          title={modal.mode === "create" ? "Add SLA Policy" : "Edit SLA Policy"}
-          submitLabel={modal.mode === "create" ? "Create" : "Save"}
-          initial={
-            modal.item || {
-              name: "",
-              zone: ZONES[0],
-              category_code: CATEGORIES[0].category_code,
-              subcategory_code: CATEGORIES[0].subs[0],
-              priority: "P3",
-              target_hours: 48,
-              breach_threshold_hours: 60,
-              escalation_steps: [
-                { after_hours: 48, action: "notify_dispatcher" },
-                { after_hours: 60, action: "notify_manager" },
-              ],
-            }
-          }
-          onClose={() => setModal({ open: false, mode: "create", item: null })}
-          onSubmit={async (payload) => {
-            setError("");
-            try {
-              if (modal.mode === "create") {
-                const created = await createSlaPolicy(payload);
-                setRows((prev) => [created, ...prev]);
-                showToast("Policy created");
-              } else {
-                const updated = await updateSlaPolicy(modal.item.id, payload);
-                setRows((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
-                showToast("Policy updated");
-              }
-              setModal({ open: false, mode: "create", item: null });
-            } catch (e) {
-              setError(e.message || "Failed");
-            }
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-function StepsPreview({ steps }) {
-  const arr = Array.isArray(steps) ? steps : [];
-  if (arr.length === 0) return <span style={{ color: "#6b7280" }}>—</span>;
-  return (
-    <div style={{ display: "grid", gap: 4, fontSize: 13 }}>
-      {arr.slice(0, 4).map((s, i) => (
-        <div key={i}>
-          after <b>{s.after_hours}h</b> → <span style={styles.badgePlain}>{s.action}</span>
-        </div>
-      ))}
-      {arr.length > 4 && <div style={{ color: "#6b7280" }}>+{arr.length - 4} more</div>}
-    </div>
-  );
-}
 
 /* ---------- Modal ---------- */
 
-function SlaModal({ title, submitLabel, initial, onClose, onSubmit }) {
+export function SlaModal({ title, submitLabel, initial, onClose, onSubmit }) {
   const [name, setName] = useState(initial.name || "");
-  const [zone, setZone] = useState(initial.zone || ZONES[0]);
-  const [priority, setPriority] = useState(initial.priority || "P3");
+  const [zone] = useState(initial.zone);
+  const [priority] = useState(initial.priority);
+  const [team_id, setTeam] = useState(initial.team_id || "");
 
-  const [category_code, setCategory] = useState(initial.category_code || CATEGORIES[0].category_code);
-  const [subcategory_code, setSubcategory] = useState(initial.subcategory_code || CATEGORIES[0].subs[0]);
 
   const [target_hours, setTargetHours] = useState(initial.target_hours ?? 48);
   const [breach_threshold_hours, setBreachHours] = useState(initial.breach_threshold_hours ?? 60);
@@ -325,15 +30,34 @@ function SlaModal({ title, submitLabel, initial, onClose, onSubmit }) {
   const [steps, setSteps] = useState(Array.isArray(initial.escalation_steps) ? initial.escalation_steps : []);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [slaRules, setSlaRules] = useState(null);
 
-  const subOptions = useMemo(() => {
-    return CATEGORIES.find((c) => c.category_code === category_code)?.subs || [];
-  }, [category_code]);
+  const category_code = initial.category_code;
+  const subcategory_code = initial.subcategory_code;
+  const [teams, setTeams] = useState([]);
+
 
   useEffect(() => {
-    if (!subOptions.includes(subcategory_code)) setSubcategory(subOptions[0] || "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category_code]);
+    let alive = true;
+
+    async function load() {
+      const rules = await getSlaRules();
+      if (!alive) return;
+      setSlaRules(rules);
+
+      if (initial.zone) {
+        const t = await listTeamsByZone(initial.zone);
+        if (!alive) return;
+        setTeams(Array.isArray(t) ? t : []);
+      } else {
+        setTeams([]);
+      }
+    }
+
+    load();
+    return () => { alive = false; };
+  }, [initial.zone]);
+
 
   function addStep() {
     setSteps((prev) => [...prev, { after_hours: Number(target_hours || 1), action: "notify_dispatcher" }]);
@@ -346,6 +70,16 @@ function SlaModal({ title, submitLabel, initial, onClose, onSubmit }) {
   function removeStep(i) {
     setSteps((prev) => prev.filter((_, idx) => idx !== i));
   }
+
+  function calculateTarget(zone, priority) {
+    if (!slaRules) return 0;
+
+    const z = slaRules.zones?.[zone] || 0;
+    const p = slaRules.priorities?.[priority] || 0;
+
+    return z + p;
+  }
+
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -366,12 +100,7 @@ function SlaModal({ title, submitLabel, initial, onClose, onSubmit }) {
     setBusy(true);
     try {
       await onSubmit({
-        name,
-        zone,
-        category_code,
-        subcategory_code,
-        priority,
-        target_hours: t,
+        team_id: team_id,                // ✅ CORRECT KEY
         breach_threshold_hours: b,
         escalation_steps: steps,
       });
@@ -394,62 +123,72 @@ function SlaModal({ title, submitLabel, initial, onClose, onSubmit }) {
 
         <form onSubmit={handleSubmit} style={{ marginTop: 12, display: "grid", gap: 10 }}>
           <Field label="Policy name">
-            <input style={styles.input} value={name} onChange={(e) => setName(e.target.value)} />
+            <input style={styles.input} value={name} onChange={(e) => setName(e.target.value)} disabled />
           </Field>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <Field label="Zone">
-              <select style={styles.input} value={zone} onChange={(e) => setZone(e.target.value)}>
-                {ZONES.map((z) => (
-                  <option key={z} value={z}>
-                    {z}
-                  </option>
-                ))}
+              <select style={styles.input} value={zone} disabled>
+                <option value={zone}>{zone}</option>
               </select>
+
             </Field>
 
             <Field label="Priority">
-              <select style={styles.input} value={priority} onChange={(e) => setPriority(e.target.value)}>
-                {PRIORITIES.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
+              <select style={styles.input} value={priority} disabled>
+                <option value={priority}>{priority}</option>
               </select>
+
             </Field>
+
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <Field label="Category">
-              <select style={styles.input} value={category_code} onChange={(e) => setCategory(e.target.value)}>
-                {CATEGORIES.map((c) => (
-                  <option key={c.category_code} value={c.category_code}>
-                    {c.category_code}
-                  </option>
-                ))}
-              </select>
+              <input
+                style={{ ...styles.input, background: "#f9fafb" }}
+                value={category_code}
+                disabled
+              />
             </Field>
 
             <Field label="Subcategory">
-              <select style={styles.input} value={subcategory_code} onChange={(e) => setSubcategory(e.target.value)}>
-                {subOptions.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+              <input
+                style={{ ...styles.input, background: "#f9fafb" }}
+                value={subcategory_code}
+                disabled
+              />
             </Field>
           </div>
 
+
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <Field label="Target hours">
-              <input style={styles.input} type="number" min={1} value={target_hours} onChange={(e) => setTargetHours(e.target.value)} />
+              <input style={styles.input} type="number" min={1} value={target_hours} onChange={(e) => setTargetHours(e.target.value)} disabled />
             </Field>
 
             <Field label="Breach threshold hours">
               <input style={styles.input} type="number" min={1} value={breach_threshold_hours} onChange={(e) => setBreachHours(e.target.value)} />
             </Field>
           </div>
+          <Field label="Assigned Team">
+            <select
+              style={styles.input}
+              value={team_id}
+              onChange={(e) => setTeam(e.target.value)}
+            >
+              <option value="">Select team</option>
+
+              {teams.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                  {(!t.zones || t.zones.length === 0) ? " (All zones)" : ""}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+
 
           <div style={{ padding: 12, border: "1px solid #e5e7eb", borderRadius: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>

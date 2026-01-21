@@ -1,47 +1,77 @@
-const BASE = "http://localhost:8000/admin/sla";
+// src/services/slaApi.js
 
-async function handle(res) {
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+
+async function request(path, { method = "GET", body } = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
   if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(txt || "API error");
+    let msg = `Request failed (${res.status})`;
+    try {
+      const data = await res.json();
+      msg = data?.detail || msg;
+    } catch { }
+    throw new Error(msg);
   }
-  return res.json();
+
+  if (res.status === 204) return null;
+  return await res.json();
 }
 
-export async function listSlaPolicies() {
-  const res = await fetch(BASE);
-  return handle(res);
-}
+/* =========================
+   SLA FOR REQUESTS (CORE)
+========================= */
 
-export async function createSlaPolicy(payload) {
-  const res = await fetch(BASE, {
+export async function createSlaForRequest(requestId, payload) {
+  return request(`/admin/requests/${requestId}/sla`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: payload,
   });
-  return handle(res);
 }
 
-export async function updateSlaPolicy(id, patch) {
-  const res = await fetch(`${BASE}/${id}`, {
+
+// 🔹 Get SLA by request (View SLA)
+export function getSlaByRequest(requestId) {
+  return request(`/admin/requests/${requestId}/sla`);
+}
+
+// 🔹 Update SLA for request
+export function updateSlaForRequest(requestId, payload) {
+  return request(`/admin/requests/${requestId}/sla`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+/* =========================
+   GLOBAL SLA POLICIES (OPTIONAL)
+========================= */
+
+export function listSlaPolicies() {
+  return request(`/admin/sla`);
+}
+
+export function updateSlaPolicy(policyId, payload) {
+  return request(`/admin/sla/${policyId}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
+    body: payload,
   });
-  return handle(res);
 }
 
-export async function toggleSlaActive(id) {
-  const res = await fetch(`${BASE}/${id}/toggle`, {
-    method: "POST",
-  });
-  return handle(res);
+// ✅ GET SLA RULES (zones + priorities)
+export function getSlaRules() {
+  return request("/admin/sla-rules");
 }
 
-export async function deleteSlaPolicy(id) {
-  const res = await fetch(`${BASE}/${id}`, {
-    method: "DELETE",
+export function saveSlaRules(payload) {
+  return request("/admin/sla-rules", {
+    method: "PUT",
+    body: payload,
   });
-  if (!res.ok) throw new Error("Delete failed");
-  return true;
 }

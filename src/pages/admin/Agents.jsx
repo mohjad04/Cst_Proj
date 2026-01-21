@@ -12,7 +12,7 @@ import { listSkillsFromCategories } from "../../services/skillsApi";
 
 
 const SHIFT_OPTIONS = ["Day", "Night", "24/7"];
-const SAMPLE_ZONES = ["ZONE-DT-01", "ZONE-W-02", "ZONE-N-03", "ZONE-S-04"];
+const SAMPLE_ZONES = ["ZONE-WEST", "ZONE-NORTH", "ZONE-EAST", "ZONE-SOUTH", "ZONE-CENTRAL"];
 // const SAMPLE_SKILLS = ["pothole", "asphalt_damage", "water_leak", "missed_trash", "street_light"];
 
 
@@ -196,11 +196,17 @@ export default function Teams() {
             try {
               if (teamModal.mode === "create") {
                 const created = await createTeam(payload);
-                setTeams((p) => [created, ...p]);
+                setTeams(p => [normalizeTeam(created, staff), ...p]);
+
                 showToast("Team created");
               } else {
                 const updated = await updateTeam(teamModal.item.id, payload);
-                setTeams((p) => p.map((t) => (t.id === updated.id ? updated : t)));
+                setTeams(p =>
+                  p.map(t =>
+                    t.id === updated.id ? normalizeTeam(updated, staff) : t
+                  )
+                );
+
                 showToast("Team updated");
               }
               setTeamModal({ open: false, mode: "create", item: null });
@@ -240,10 +246,17 @@ function TeamsTable({ rows, staff, skillsOptions, onEdit, onToggle, onDelete }) 
                 <div style={{ fontWeight: 800 }}>{t.name}</div>
               </td>
               <td style={styles.td}>
-                {(t.members || []).length === 0
-                  ? "—"
-                  : t.members.map((id) => <div key={id}>{emailOf(id)}</div>)}
+                {(t.members || []).length === 0 ? (
+                  "—"
+                ) : (
+                  t.members.map((m) => (
+                    <div key={m.id}>
+                      {m.email || m.full_name || "—"}
+                    </div>
+                  ))
+                )}
               </td>
+
               <td style={styles.td}>{(t.zones || []).join(", ") || "—"}</td>
               <td style={styles.td}>
                 {(t.skills || [])
@@ -316,7 +329,9 @@ function TeamModal({
   onSubmit
 }) {
   const [name, setName] = useState(initial.name);
-  const [members, setMembers] = useState(initial.members);
+  const [members, setMembers] = useState(
+    (initial.members || []).map(m => typeof m === "string" ? m : m.id)
+  );
   const [zones, setZones] = useState(initial.zones);
   const [skills, setSkills] = useState(initial.skills);
   const [shift, setShift] = useState(initial.shift);
@@ -331,7 +346,7 @@ function TeamModal({
 
     setBusy(true);
     try {
-      await onSubmit({ name, members, zones, skills, shift });
+      await onSubmit({ name, members: members.map(m => typeof m === "string" ? m : m.id), zones, skills, shift });
     } catch (e2) {
       setErr(e2.message || "Failed");
     } finally {
@@ -420,11 +435,17 @@ function TeamModal({
                     />
 
                     <div>
-                      <div style={styles.staffEmail}>{u.email}</div>
+                      <div style={styles.staffEmail}>
+                        {u.email || u.contacts?.email || "—"}
+                      </div>
+
                       {u.full_name && (
-                        <div style={styles.staffName}>{u.full_name}</div>
+                        <div style={styles.staffName}>
+                          {u.full_name}
+                        </div>
                       )}
                     </div>
+
                   </label>
                 ))}
               </div>
@@ -625,6 +646,23 @@ function ZoneMultiSelect({ options, values, onChange }) {
     </div>
   );
 }
+
+function normalizeTeam(team, staff) {
+  return {
+    ...team,
+    members: (team.members || []).map(m => {
+      const id = typeof m === "string" ? m : m.id;
+      const u = staff.find(s => s.id === id);
+
+      return {
+        id,
+        email: u?.email || u?.contacts?.email || null,
+        full_name: u?.full_name || null,
+      };
+    })
+  };
+}
+
 
 /* ---------- STYLES (UNCHANGED) ---------- */
 

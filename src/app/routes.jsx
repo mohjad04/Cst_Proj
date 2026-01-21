@@ -1,3 +1,4 @@
+// src/app/routes.jsx
 import React from "react";
 import { Navigate } from "react-router-dom";
 
@@ -9,23 +10,26 @@ import ProtectedRoute from "../auth/ProtectedRoute";
 import RoleGate from "../auth/RoleGate";
 
 import AdminLayout from "../layouts/AdminLayout";
-import StaffLayout from "../layouts/StaffLayout";
+// import StaffLayout from "../layouts/StaffLayout";
 
 // Admin pages
 import AdminDashboard from "../pages/admin/AdminDashboard";
 import Users from "../pages/admin/Users";
 import Agents from "../pages/admin/Agents";
 import Categories from "../pages/admin/Categories";
-import SlaPolicies from "../pages/admin/SlaPolicies";
+// import SlaPolicies from "../pages/admin/SlaPolicies";
 import SystemAudit from "../pages/admin/SystemAudit";
-import Analytics from "../pages/admin/Analytics";
+// import Analytics from "../pages/admin/Analytics";
+import AdminRequests from "../pages/admin/Requests";
+import AdminRequestDetails from "../pages/admin/RequestDetails";
 
-// Staff pages
-import StaffDashboard from "../pages/staff/StaffDashboard";
-import Requests from "../pages/staff/Requests";
-import RequestDetails from "../pages/staff/RequestDetails";
-import Assignment from "../pages/staff/Assignment";
-import SlaMonitoring from "../pages/staff/SlaMonitoring";
+// // Staff pages
+// import StaffDashboard from "../pages/staff/StaffDashboard";
+// import StaffRequests from "../pages/staff/Requests";
+// import StaffRequestDetails from "../pages/staff/RequestDetails";
+// import Assignment from "../pages/staff/Assignment";
+// import SlaMonitoring from "../pages/staff/SlaMonitoring";
+
 
 export const routes = [
   { path: "/login", element: <Login /> },
@@ -48,31 +52,36 @@ export const routes = [
               { path: "users", element: <Users /> },
               { path: "agents", element: <Agents /> },
               { path: "categories", element: <Categories /> },
-              { path: "sla", element: <SlaPolicies /> },
+
+              // ✅ ADD THESE
+              { path: "requests", element: <AdminRequests /> },
+              { path: "requests/:requestId", element: <AdminRequestDetails /> },
+
+              // { path: "sla", element: <SlaPolicies /> },
               { path: "audit", element: <SystemAudit /> },
-              { path: "analytics", element: <Analytics /> },
+              // { path: "analytics", element: <Analytics /> },
             ],
           },
         ],
       },
 
-      // Staff Area
-      {
-        element: <RoleGate allowed={["staff"]} />,
-        children: [
-          {
-            path: "/staff",
-            element: <StaffLayout />,
-            children: [
-              { index: true, element: <StaffDashboard /> },
-              { path: "requests", element: <Requests /> },
-              { path: "requests/:requestId", element: <RequestDetails /> },
-              { path: "assignment", element: <Assignment /> },
-              { path: "sla", element: <SlaMonitoring /> },
-            ],
-          },
-        ],
-      },
+      // // Staff Area
+      // {
+      //   element: <RoleGate allowed={["staff"]} />,
+      //   children: [
+      //     {
+      //       path: "/staff",
+      //       element: <StaffLayout />,
+      //       children: [
+      //         { index: true, element: <StaffDashboard /> },
+      //         { path: "requests", element: <StaffRequests /> },
+      //         { path: "requests/:requestId", element: <StaffRequestDetails /> },
+      //         { path: "assignment", element: <Assignment /> },
+      //         { path: "sla", element: <SlaMonitoring /> },
+      //       ],
+      //     },
+      //   ],
+      // },
     ],
   },
 
@@ -80,8 +89,6 @@ export const routes = [
 ];
 
 function HomeRedirect() {
-  // Redirect user to their correct home based on role
-  // This component will run inside ProtectedRoute so user exists
   return <RoleBasedRedirect />;
 }
 
@@ -91,6 +98,6 @@ function RoleBasedRedirect() {
   const role = auth?.user?.role;
 
   if (role === "admin") return <Navigate to="/admin" replace />;
-  if (role === "staff") return <Navigate to="/staff" replace />;
+  // if (role === "staff") return <Navigate to="/staff" replace />;
   return <Navigate to="/login" replace />;
 }

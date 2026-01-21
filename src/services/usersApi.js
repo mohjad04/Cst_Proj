@@ -12,7 +12,7 @@ async function api(path, options = {}) {
     try {
       const data = await res.json();
       msg = data?.detail || data?.message || msg;
-    } catch {}
+    } catch { }
     throw new Error(msg);
   }
 
@@ -39,14 +39,16 @@ export function updateUser(userId, payload) {
   });
 }
 
-export function toggleUserActive(userId) {
-  return api(`/admin/users/${userId}/toggle`, {
-    method: "POST",
-  });
-}
-
 export function deleteUser(userId) {
   return api(`/admin/users/${userId}`, {
     method: "DELETE",
   });
 }
+
+export async function verifyUser(userId) {
+  return api(`/admin/users/${userId}/verify`, {
+    method: "POST",
+  });
+}
+
+

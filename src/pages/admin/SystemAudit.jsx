@@ -8,23 +8,27 @@ import {
 } from "../../services/auditApi";
 
 const TYPES = [
-  "auth.login",
-  "auth.logout",
-  "rbac.user.create",
-  "rbac.user.update",
-  "rbac.user.disable",
-  "taxonomy.category.create",
-  "taxonomy.category.update",
-  "taxonomy.subcategory.create",
-  "taxonomy.subcategory.update",
-  "sla.policy.create",
-  "sla.policy.update",
-  "sla.policy.disable",
-  "request.created",
-  "request.triaged",
-  "request.assigned",
-  "request.escalated",
-  "request.closed",
+  "user.login",
+  "user.register",
+  "user.toggle",
+  "user.create",
+  "user.update",
+  "user.delete",
+  "team.create",
+  "team.update",
+  "team.delete",
+  "team.toggle",
+  "category.create",
+  "category.delete",
+  "subcategory.create",
+  "subcategory.update",
+  "subcategory.delete",
+  "sla.update",
+  "sla.create",
+  "request.create",
+  "request.update",
+  "request.delete",
+  "user.verify",
 ];
 
 const ROLES = ["admin", "staff", "system"];
@@ -110,7 +114,6 @@ export default function SystemAudit() {
         <div>
           <h1 style={{ margin: 0 }}>Audit Logs</h1>
           <div style={{ color: "#6b7280", marginTop: 6 }}>
-            Immutable event stream review (created, triaged, assignment, escalation, milestone).
           </div>
         </div>
 

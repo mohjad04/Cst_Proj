@@ -63,3 +63,8 @@ export function toggleAgentActive(agentId) {
 export function deleteAgent(agentId) {
   return request(`/admin/agents/${agentId}`, { method: "DELETE" });
 }
+
+export function listTeamsByZone(zone) {
+  return request(`/admin/teams/by-zone/${zone}`);
+}
+

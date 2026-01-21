@@ -3,8 +3,7 @@ import {
   createUser,
   deleteUser,
   listUsers,
-  toggleUserActive,
-  updateUser,
+  verifyUser,
 } from "../../services/usersApi";
 
 const ROLES = [
@@ -14,11 +13,8 @@ const ROLES = [
   { value: "citizen", label: "Citizen" },
 ];
 
-const STATUS = [
-  { value: "all", label: "All status" },
-  { value: "true", label: "Active" },
-  { value: "false", label: "Disabled" },
-];
+
+
 
 export default function Users() {
   const [rows, setRows] = useState([]);
@@ -26,14 +22,27 @@ export default function Users() {
 
   const [q, setQ] = useState("");
   const [role, setRole] = useState("all");
-  const [status, setStatus] = useState("all");
 
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
-  const [selected, setSelected] = useState(null);
+
+
+
+  async function onVerify(userId) {
+    setError("");
+    try {
+      const updated = await verifyUser(userId);
+      setRows(prev =>
+        prev.map(u => (u.id === userId ? updated : u))
+      );
+      showToast("User verified");
+    } catch (e) {
+      setError(e.message || "Failed to verify user");
+    }
+  }
+
 
   async function load() {
     setLoading(true);
@@ -58,8 +67,7 @@ export default function Users() {
     return rows
       .filter((u) => {
         if (role !== "all" && u.role !== role) return false;
-        if (status === "true" && !u.is_active) return false;
-        if (status === "false" && u.is_active) return false;
+
         if (!query) return true;
         return (
           u.full_name.toLowerCase().includes(query) ||
@@ -68,7 +76,7 @@ export default function Users() {
         );
       })
       .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
-  }, [rows, q, role, status]);
+  }, [rows, q, role]);
 
   function roleLabel(r) {
     return r === "admin" ? "Admin" : r === "staff" ? "Office Employee" : "Citizen";
@@ -77,17 +85,6 @@ export default function Users() {
   function showToast(msg) {
     setToast(msg);
     setTimeout(() => setToast(""), 2200);
-  }
-
-  async function onToggleActive(userId) {
-    setError("");
-    try {
-      const updated = await toggleUserActive(userId);
-      setRows((prev) => prev.map((u) => (u.id === userId ? updated : u)));
-      showToast(updated.is_active ? "User enabled" : "User disabled");
-    } catch (e) {
-      setError(e.message || "Failed");
-    }
   }
 
   async function onDelete(userId) {
@@ -104,10 +101,7 @@ export default function Users() {
     }
   }
 
-  function openEdit(user) {
-    setSelected(user);
-    setEditOpen(true);
-  }
+
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
@@ -145,14 +139,6 @@ export default function Users() {
               </option>
             ))}
           </select>
-
-          <select style={styles.input} value={status} onChange={(e) => setStatus(e.target.value)}>
-            {STATUS.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </select>
         </div>
 
         <div style={{ marginTop: 10, color: "#6b7280", fontSize: 13 }}>
@@ -184,7 +170,7 @@ export default function Users() {
                   <th style={styles.th}>Name</th>
                   <th style={styles.th}>Email</th>
                   <th style={styles.th}>Role</th>
-                  <th style={styles.th}>Status</th>
+                  <th style={styles.th}>Verification</th>
                   <th style={styles.th}>Created</th>
                   <th style={styles.th}></th>
                 </tr>
@@ -204,29 +190,39 @@ export default function Users() {
                       <span
                         style={{
                           ...styles.badge,
-                          background: u.is_active ? "#ecfeff" : "#fef2f2",
-                          borderColor: u.is_active ? "#a5f3fc" : "#fecaca",
+                          background:
+                            u.verification?.state === "verified" ? "#ecfeff" : "#fef2f2",
+                          borderColor:
+                            u.verification?.state === "verified" ? "#67e8f9" : "#fecaca",
                         }}
                       >
-                        {u.is_active ? "Active" : "Disabled"}
+                        {u.verification?.state === "verified"
+                          ? "Verified"
+                          : "Unverified"}
                       </span>
                     </td>
+
                     <td style={styles.td}>{u.created_at || "—"}</td>
                     <td style={styles.td}>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                        <button style={{ ...styles.btn, background: "#e5e7eb", color: "#111827" }} onClick={() => openEdit(u)}>
-                          Edit
-                        </button>
+
+                        {u.verification?.state !== "verified" && (
+                          <button
+                            style={{ ...styles.btn, background: "#dcfce7", color: "#065f46" }}
+                            onClick={() => onVerify(u.id)}
+                          >
+                            Verify
+                          </button>
+                        )}
+
                         <button
-                          style={{ ...styles.btn, background: u.is_active ? "#fee2e2" : "#dcfce7", color: "#111827" }}
-                          onClick={() => onToggleActive(u.id)}
+                          style={{ ...styles.btn, background: "#111827" }}
+                          onClick={() => onDelete(u.id)}
                         >
-                          {u.is_active ? "Disable" : "Enable"}
-                        </button>
-                        <button style={{ ...styles.btn, background: "#111827" }} onClick={() => onDelete(u.id)}>
                           Delete
                         </button>
                       </div>
+
                     </td>
                   </tr>
                 ))}
@@ -260,30 +256,6 @@ export default function Users() {
               showToast("User created");
             } catch (e) {
               setError(e.message || "Failed to create user");
-            }
-          }}
-        />
-      )}
-
-      {editOpen && selected && (
-        <UserModal
-          title="Edit User"
-          submitLabel="Save"
-          initial={{ full_name: selected.full_name, email: selected.email, role: selected.role }}
-          onClose={() => {
-            setEditOpen(false);
-            setSelected(null);
-          }}
-          onSubmit={async (payload) => {
-            setError("");
-            try {
-              const updated = await updateUser(selected.id, payload);
-              setRows((prev) => prev.map((u) => (u.id === selected.id ? updated : u)));
-              setEditOpen(false);
-              setSelected(null);
-              showToast("User updated");
-            } catch (e) {
-              setError(e.message || "Failed to update user");
             }
           }}
         />

@@ -20,7 +20,7 @@ export default function AdminLayout() {
         <NavItem to="/admin/users">Users</NavItem>
         <NavItem to="/admin/agents">Teams</NavItem>
         <NavItem to="/admin/categories">Categories</NavItem>
-        <NavItem to="/admin/sla">Requests</NavItem>
+        <NavItem to="/admin/requests">Requests</NavItem>
         <NavItem to="/admin/audit">Audit</NavItem>
         <NavItem to="/admin/analytics">Analytics</NavItem>
 

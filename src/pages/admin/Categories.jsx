@@ -372,8 +372,7 @@ function SubcategoryModal({ title, submitLabel, initial, onClose, onSubmit }) {
             <option value="P1">P1</option>
             <option value="P2">P2</option>
             <option value="P3">P3</option>
-            <option value="P4">P4</option>
-            <option value="P5">P5</option>
+
           </select>
         </Field>
         <FooterButtons submitLabel={submitLabel} onClose={onClose} />
