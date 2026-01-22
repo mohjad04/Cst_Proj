@@ -1,5 +1,6 @@
+// 
+
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import RequestDetailsModal from "../../components/requests/RequestDetailsModal";
 import SlaRulesModal from "../../components/sla/SlaRulesModal";
 import { SlaModal } from "./SlaPolicies";
@@ -10,15 +11,158 @@ import {
 } from "../../services/slaApi";
 import { listRequests, getRequestById } from "../../services/requestsApi";
 
+/* ----------------------------- small helpers ----------------------------- */
+const isArr = (v) => Array.isArray(v);
 
+function Icon({ name, style }) {
+    const common = { width: 16, height: 16, display: "inline-block", ...style };
+    if (name === "search")
+        return (
+            <svg viewBox="0 0 24 24" style={common} fill="none">
+                <path d="M10.5 18.5a8 8 0 1 1 0-16 8 8 0 0 1 0 16Z" stroke="currentColor" strokeWidth="2" />
+                <path d="M21 21l-4.2-4.2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+        );
+    if (name === "refresh")
+        return (
+            <svg viewBox="0 0 24 24" style={common} fill="none">
+                <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+        );
+    if (name === "gear")
+        return (
+            <svg viewBox="0 0 24 24" style={common} fill="none">
+                <path
+                    d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                />
+                <path
+                    d="M19.4 15a7.94 7.94 0 0 0 .1-1 7.94 7.94 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a7.6 7.6 0 0 0-1.7-1L15 3h-6l-.3 2.6a7.6 7.6 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.5a7.94 7.94 0 0 0-.1 1c0 .34.03.67.1 1l-2 1.5 2 3.4 2.4-1c.53.4 1.1.74 1.7 1L9 21h6l.3-2.6c.6-.26 1.17-.6 1.7-1l2.4 1 2-3.4-2-1.5Z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinejoin="round"
+                />
+            </svg>
+        );
+    return null;
+}
+
+function fmtDate(v) {
+    if (!v) return "—";
+    try {
+        return new Date(v).toLocaleString();
+    } catch {
+        return "—";
+    }
+}
+
+function statusMeta(status) {
+    const s = String(status || "").toLowerCase();
+
+    if (s === "new")
+        return {
+            label: "New",
+            rail: "rgba(220,38,38,0.85)",
+            bg: "rgba(220,38,38,0.10)",
+            border: "rgba(220,38,38,0.22)",
+            text: "#991b1b",
+        };
+
+    if (s === "triaged")
+        return {
+            label: "Triaged",
+            rail: "rgba(245,158,11,0.85)", // amber
+            bg: "rgba(245,158,11,0.12)",
+            border: "rgba(245,158,11,0.22)",
+            text: "#92400e",
+        };
+
+    if (s === "assigned")
+        return {
+            label: "Assigned",
+            rail: "rgba(59,130,246,0.85)", // blue
+            bg: "rgba(59,130,246,0.12)",
+            border: "rgba(59,130,246,0.22)",
+            text: "#1d4ed8",
+        };
+
+    if (s === "in_progress")
+        return {
+            label: "In Progress",
+            rail: "rgba(168,85,247,0.85)", // purple
+            bg: "rgba(168,85,247,0.12)",
+            border: "rgba(168,85,247,0.22)",
+            text: "#6d28d9",
+        };
+
+    if (s === "resolved")
+        return {
+            label: "Resolved",
+            rail: "rgba(22,163,74,0.85)", // green
+            bg: "rgba(22,163,74,0.10)",
+            border: "rgba(22,163,74,0.22)",
+            text: "#166534",
+        };
+
+    if (s === "closed")
+        return {
+            label: "Closed",
+            rail: "rgba(100,116,139,0.75)", // slate
+            bg: "rgba(100,116,139,0.10)",
+            border: "rgba(100,116,139,0.20)",
+            text: "#334155",
+        };
+
+    return {
+        label: status || "—",
+        rail: "rgba(148,163,184,0.75)",
+        bg: "rgba(148,163,184,0.10)",
+        border: "rgba(148,163,184,0.20)",
+        text: "#334155",
+    };
+}
+
+
+function Button({ variant = "primary", children, style, ...props }) {
+    const v =
+        variant === "primary"
+            ? styles.btnPrimary
+            : variant === "neutral"
+                ? styles.btnNeutral
+                : variant === "soft"
+                    ? styles.btnSoft
+                    : styles.btnNeutral;
+
+    return (
+        <button type="button" {...props} style={{ ...styles.btn, ...v, ...style }}>
+            {children}
+        </button>
+    );
+}
+
+function Pill({ active, children, onClick }) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            style={{ ...styles.pillBtn, ...(active ? styles.pillBtnOn : null) }}
+        >
+            {children}
+        </button>
+    );
+}
+
+/* ================================ PAGE ================================ */
 
 export default function Requests() {
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
+
     const [q, setQ] = useState("");
-    const navigate = useNavigate();
-    const [statusFilter, setStatusFilter] = useState("all");
-    // "all" | "new" | "triaged"
+    const [statusFilter, setStatusFilter] = useState("all"); // all | new | triaged | resolved | closed
+
     const [openRequest, setOpenRequest] = useState(null);
     const [slaModal, setSlaModal] = useState({
         open: false,
@@ -27,21 +171,35 @@ export default function Requests() {
     });
     const [showSlaRules, setShowSlaRules] = useState(false);
 
+    async function reload() {
+        setLoading(true);
+        try {
+            const data = await listRequests();
+            const normalized = (isArr(data) ? data : []).map((r) => ({
+                ...r,
+                id: r.id || r._id || r.request_id,
+            }));
+            setRows(normalized);
+        } catch (e) {
+            console.error(e);
+            setRows([]);
+        } finally {
+            setLoading(false);
+        }
+    }
+
     useEffect(() => {
         let alive = true;
-
-        async function load() {
+        (async () => {
             setLoading(true);
             try {
-                const data = await listRequests(); // gets all
+                const data = await listRequests();
                 if (!alive) return;
 
-                // Normalize for UI (if backend returns _id)
-                const normalized = (Array.isArray(data) ? data : []).map((r) => ({
+                const normalized = (isArr(data) ? data : []).map((r) => ({
                     ...r,
-                    id: r.id || r._id,
+                    id: r.id || r._id || r.request_id,
                 }));
-
                 setRows(normalized);
             } catch (e) {
                 console.error(e);
@@ -49,121 +207,191 @@ export default function Requests() {
             } finally {
                 if (alive) setLoading(false);
             }
-        }
-
-        load();
+        })();
         return () => {
             alive = false;
         };
     }, []);
 
+    const stats = useMemo(() => {
+        const total = rows.length;
+        const by = {
+            new: 0,
+            triaged: 0,
+            assigned: 0,
+            in_progress: 0,
+            resolved: 0,
+            closed: 0,
+            other: 0,
+        };
+
+        rows.forEach((r) => {
+            const s = String(r.status || "").toLowerCase();
+            if (by[s] !== undefined) by[s] += 1;
+            else by.other += 1;
+        });
+
+        return { total, ...by };
+    }, [rows]);
+
 
     const filtered = useMemo(() => {
-        return rows.filter((r) => {
-            // status filter
-            if (statusFilter !== "all" && r.status !== statusFilter) {
-                return false;
-            }
+        const query = q.trim().toLowerCase();
 
-            // text search
-            const query = q.trim().toLowerCase();
+        return rows.filter((r) => {
+            const s = String(r.status || "").toLowerCase();
+
+            if (statusFilter !== "all" && s !== statusFilter) return false;
+
             if (!query) return true;
 
-            return [r.request_id, r.category]
+            // search across common fields (safe)
+            const hay = [
+                r.request_id,
+                r.category,
+                r.sub_category,
+                r.priority,
+                r.zone_name,
+                r.address_hint,
+            ]
                 .filter(Boolean)
                 .join(" ")
-                .toLowerCase()
-                .includes(query);
+                .toLowerCase();
+
+            return hay.includes(query);
         });
     }, [rows, q, statusFilter]);
 
-    function statusAccent(status) {
-        if (status === "new") return "#dc2626";      // red
-        if (status === "triaged") return "#16a34a";  // green
-        return "#9ca3af";
+    async function openDetails(r) {
+        try {
+            const full = await getRequestById(r.request_id);
+            setOpenRequest(full);
+        } catch (e) {
+            console.error(e);
+            alert(e?.message || "Failed to open request");
+        }
     }
 
-    if (loading) return <div style={{ padding: 12 }}>Loading requests…</div>;
+    if (loading) {
+        return (
+            <div style={styles.page}>
+                <div style={styles.loadingCard}>Loading requests…</div>
+            </div>
+        );
+    }
 
     return (
         <div style={styles.page}>
-
-            <button
-                style={styles.manageSlaFixed}
-                onClick={() => setShowSlaRules(true)}
-            >
-                Manage SLA Rules
-            </button>
-            {/* Header */}
-            <div>
-                <h1 style={styles.title}>Requests</h1>
-
-                <div style={styles.searchRow}>
-                    <input
-                        style={styles.search}
-                        placeholder="Search requests…"
-                        value={q}
-                        onChange={(e) => setQ(e.target.value)}
-                    />
-
-                    <div style={styles.filters}>
-                        {["all", "new", "triaged"].map((s) => (
-                            <button
-                                key={s}
-                                onClick={() => setStatusFilter(s)}
-                                style={{
-                                    ...styles.filterBtn,
-                                    ...(statusFilter === s ? styles.filterBtnActive : {}),
-                                }}
-                            >
-                                {s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
-                            </button>
-                        ))}
+            {/* toolbar */}
+            <div style={styles.toolbar}>
+                <div style={styles.toolbarLeft}>
+                    <div style={styles.chipsRow}>
+                        <span style={styles.chip}>{stats.total} total</span>
+                        <span style={{ ...styles.chip, ...styles.chipRed }}>{stats.new} new</span>
+                        <span style={styles.chip}>{stats.triaged} triaged</span>
+                        <span style={styles.chip}>{stats.assigned} assigned</span>
+                        <span style={styles.chip}>{stats.in_progress} in progress</span>
+                        <span style={{ ...styles.chip, ...styles.chipGreen }}>{stats.resolved} resolved</span>
+                        <span style={{ ...styles.chip, ...styles.chipSlate }}>{stats.closed} closed</span>
                     </div>
 
+
+                    <div style={styles.searchWrap}>
+                        <span style={styles.searchIcon}>
+                            <Icon name="search" />
+                        </span>
+                        <input
+                            style={styles.searchInput}
+                            placeholder="Search by request id, category, zone, priority…"
+                            value={q}
+                            onChange={(e) => setQ(e.target.value)}
+                        />
+                    </div>
+
+                    <div style={styles.pillsRow}>
+                        <Pill active={statusFilter === "all"} onClick={() => setStatusFilter("all")}>All</Pill>
+                        <Pill active={statusFilter === "new"} onClick={() => setStatusFilter("new")}>New</Pill>
+                        <Pill active={statusFilter === "triaged"} onClick={() => setStatusFilter("triaged")}>Triaged</Pill>
+                        <Pill active={statusFilter === "assigned"} onClick={() => setStatusFilter("assigned")}>Assigned</Pill>
+                        <Pill active={statusFilter === "in_progress"} onClick={() => setStatusFilter("in_progress")}>In Progress</Pill>
+                        <Pill active={statusFilter === "resolved"} onClick={() => setStatusFilter("resolved")}>Resolved</Pill>
+                        <Pill active={statusFilter === "closed"} onClick={() => setStatusFilter("closed")}>Closed</Pill>
+                    </div>
 
                 </div>
 
+                <div style={styles.toolbarRight}>
+                    <Button variant="neutral" onClick={reload}>
+                        <span style={styles.btnIcon}>
+                            <Icon name="refresh" />
+                        </span>
+                        Refresh
+                    </Button>
 
+                    <Button variant="primary" onClick={() => setShowSlaRules(true)}>
+                        <span style={styles.btnIcon}>
+                            <Icon name="gear" />
+                        </span>
+                        Manage SLA Rules
+                    </Button>
+                </div>
             </div>
 
-
-
-            {/* List */}
+            {/* list */}
             <div style={styles.list}>
-                {filtered.map((r) => (
-                    <div
-                        key={r.request_id}
-                        style={{
-                            ...styles.card,
-                            borderLeft: `5px solid ${statusAccent(r.status)}`,
-                        }}
-                        onClick={async () => {
-                            const full = await getRequestById(r.request_id);
-                            setOpenRequest(full);
-                        }}
-                    >
-                        <div style={styles.topRow}>
-                            <div style={styles.requestId}>{r.request_id}</div>
-                            <div style={styles.statusText}>{r.status}</div>
-                        </div>
+                {filtered.map((r) => {
+                    const meta = statusMeta(r.status);
+                    const created = r.timestamps?.created_at || r.created_at;
 
-                        <div style={styles.meta}>
-                            {new Date(r.timestamps?.created_at).toLocaleString()}
-                        </div>
+                    return (
+                        <button
+                            key={r.request_id}
+                            type="button"
+                            onClick={() => openDetails(r)}
+                            style={{ ...styles.card, borderLeft: `5px solid ${meta.rail}` }}
+                        >
+                            <div style={styles.cardTop}>
+                                <div style={styles.idCol}>
+                                    <div style={styles.requestId}>{r.request_id}</div>
+                                    <div style={styles.timeText}>{fmtDate(created)}</div>
+                                </div>
 
-                        <div style={styles.category}>
-                            Category: <span>{r.category}</span>
-                        </div>
-                    </div>
-                ))}
+                                <div style={{ ...styles.badge, background: meta.bg, borderColor: meta.border, color: meta.text }}>
+                                    {meta.label}
+                                </div>
+                            </div>
+
+                            <div style={styles.cardBody}>
+                                <div style={styles.kv}>
+                                    <span style={styles.k}>Category</span>
+                                    <span style={styles.v}>{r.category || "—"}</span>
+                                </div>
+
+                                <div style={styles.kv}>
+                                    <span style={styles.k}>Priority</span>
+                                    <span style={styles.v}>{r.priority || "—"}</span>
+                                </div>
+
+                                <div style={styles.kv}>
+                                    <span style={styles.k}>Zone</span>
+                                    <span style={styles.v}>{r.zone_name || r.location?.zone_name || "—"}</span>
+                                </div>
+                            </div>
+
+                            {r.address_hint && <div style={styles.addressLine}>{r.address_hint}</div>}
+                        </button>
+                    );
+                })}
 
                 {filtered.length === 0 && (
-                    <div style={styles.empty}>No requests found.</div>
+                    <div style={styles.emptyBox}>
+                        <div style={styles.emptyTitle}>No requests found</div>
+                        <div style={styles.emptyText}>Try changing the search or filters.</div>
+                    </div>
                 )}
             </div>
 
-            {/* ✅ MODALS MUST BE HERE */}
+            {/* modals */}
             {openRequest && (
                 <RequestDetailsModal
                     request={openRequest}
@@ -190,14 +418,10 @@ export default function Requests() {
                             });
                         }
                     }}
-
-
                 />
             )}
 
-            {showSlaRules && (
-                <SlaRulesModal onClose={() => setShowSlaRules(false)} />
-            )}
+            {showSlaRules && <SlaRulesModal onClose={() => setShowSlaRules(false)} />}
 
             {slaModal.open && (
                 <SlaModal
@@ -221,9 +445,7 @@ export default function Requests() {
                                 ],
                             }
                     }
-                    onClose={() =>
-                        setSlaModal({ open: false, mode: "create", request: null })
-                    }
+                    onClose={() => setSlaModal({ open: false, mode: "create", request: null })}
                     onSubmit={async (payload) => {
                         try {
                             if (slaModal.mode === "create") {
@@ -232,178 +454,185 @@ export default function Requests() {
                                 await updateSlaForRequest(slaModal.request.request_id, payload);
                             }
 
-                            // 🔄 reload requests from backend (single source of truth)
                             const fresh = await listRequests();
                             setRows(
                                 (Array.isArray(fresh) ? fresh : []).map((r) => ({
                                     ...r,
-                                    id: r.id || r._id,
+                                    id: r.id || r._id || r.request_id,
                                 }))
                             );
 
                             setSlaModal({ open: false, mode: "create", request: null });
                         } catch (e) {
                             console.error(e);
-                            alert(e.message || "Failed to save SLA");
+                            alert(e?.message || "Failed to save SLA");
                         }
                     }}
-
                 />
             )}
-
-
-
         </div>
-
-
     );
-
 }
 
-/* ---------- styles ---------- */
+/* ================================ STYLES ================================ */
 
 const styles = {
-    page: {
-        display: "grid",
-        gap: 20,
-    },
-    header: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "flex-end",
-        gap: 12,
-        flexWrap: "wrap",
-    },
-    title: {
-        margin: 0,
-        fontSize: 24,
-        fontWeight: 800,
-    },
-    subtitle: {
-        marginTop: 4,
-        fontSize: 13,
-        color: "#6b7280",
+    page: { display: "grid", gap: 12 },
+
+    loadingCard: {
+        background: "rgba(255,255,255,0.92)",
+        borderRadius: 16,
+        border: "1px solid rgba(15,23,42,0.08)",
+        boxShadow: "0 12px 26px rgba(2,6,23,0.06)",
+        padding: 14,
+        fontWeight: 900,
+        color: "#0f172a",
     },
 
-    list: {
-        display: "grid",
-        gridTemplateColumns: "1fr",
-        gap: 12,
-    },
-    card: {
-        background: "white",
-        borderRadius: 12,
-        padding: "14px 16px",
-        cursor: "pointer",
-        border: "1px solid #e5e7eb",
-        transition: "box-shadow 0.15s ease, transform 0.15s ease",
-        boxShadow: "0 4px 12px rgba(0,0,0,0.04)",
-    },
-    topRow: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-    },
-    requestId: {
-        fontSize: 16,
-        fontWeight: 800,
-        color: "#111827",
-    },
-    statusText: {
-        fontSize: 12,
-        fontWeight: 700,
-        textTransform: "capitalize",
-        color: "#6b7280",
-        background: "#f3f4f6",
-        padding: "4px 8px",
-        borderRadius: 6,
-    },
-    meta: {
-        marginTop: 4,
-        fontSize: 12,
-        color: "#6b7280",
-    },
-    category: {
-        marginTop: 8,
-        fontSize: 14,
-        color: "#374151",
-    },
-    empty: {
-        color: "#6b7280",
+    toolbar: {
+        background: "rgba(255,255,255,0.92)",
+        borderRadius: 16,
+        border: "1px solid rgba(15,23,42,0.08)",
+        boxShadow: "0 12px 26px rgba(2,6,23,0.06)",
+        backdropFilter: "blur(10px)",
         padding: 12,
-    },
-
-    searchRow: {
         display: "flex",
-        alignItems: "center",
+        justifyContent: "space-between",
         gap: 12,
-        marginTop: 12,
+        alignItems: "flex-start",
         flexWrap: "wrap",
     },
 
-    search: {
-        flex: 1,
-        maxWidth: 520,
-        padding: "10px 14px",
-        borderRadius: 10,
-        border: "1px solid #e5e7eb",
-        outline: "none",
-        fontSize: 14,
-    },
+    toolbarLeft: { display: "grid", gap: 10, flex: "1 1 520px", minWidth: 320 },
+    toolbarRight: { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" },
 
-    filters: {
-        display: "flex",
-        gap: 8,
-    },
-
-    filterBtn: {
-        padding: "6px 14px",
-        borderRadius: 999,
-        border: "1px solid #e5e7eb",
-        background: "#f9fafb",
-        fontSize: 13,
-        cursor: "pointer",
-        color: "#374151",
-        fontWeight: 600,
-    },
-
-    filterBtnActive: {
-        background: "#111827",
-        color: "white",
-        borderColor: "#111827",
-    },
-
-    headerRow: {
-        display: "flex",
-        justifyContent: "space-between",
+    chipsRow: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" },
+    chip: {
+        display: "inline-flex",
         alignItems: "center",
+        padding: "6px 10px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 900,
+        border: "1px solid rgba(15,23,42,0.10)",
+        background: "#f8fafc",
+        color: "#0f172a",
+        whiteSpace: "nowrap",
     },
+    chipRed: { background: "rgba(220,38,38,0.10)", color: "#991b1b", borderColor: "rgba(220,38,38,0.20)" },
+    chipGreen: { background: "rgba(22,163,74,0.10)", color: "#166534", borderColor: "rgba(22,163,74,0.20)" },
+    chipSlate: { background: "rgba(100,116,139,0.10)", color: "#334155", borderColor: "rgba(100,116,139,0.20)" },
 
-    manageBtn: {
-        background: "#111827",
-        color: "white",
+    searchWrap: {
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        background: "#ffffff",
+        border: "1px solid rgba(15,23,42,0.10)",
+        borderRadius: 14,
+        height: 44,
+        boxShadow: "0 10px 18px rgba(2,6,23,0.04)",
+    },
+    searchIcon: { position: "absolute", left: 12, color: "#64748b", display: "grid", placeItems: "center" },
+    searchInput: {
+        width: "100%",
+        height: "100%",
         border: "none",
-        padding: "8px 14px",
-        borderRadius: 10,
-        cursor: "pointer",
-        fontWeight: 700,
+        outline: "none",
+        background: "transparent",
+        padding: "0 12px 0 38px",
+        fontSize: 14,
+        color: "#0f172a",
+        fontWeight: 850,
     },
 
-    manageSlaFixed: {
-        position: "fixed",
-        top: 16,
-        right: 24,
-        zIndex: 1000,
-
-        background: "#111827",
-        color: "white",
-        border: "none",
-        padding: "10px 16px",
-        borderRadius: 10,
-        fontWeight: 700,
+    pillsRow: { display: "flex", gap: 8, flexWrap: "wrap" },
+    pillBtn: {
+        border: "1px solid rgba(15,23,42,0.10)",
+        background: "#ffffff",
+        borderRadius: 999,
+        padding: "6px 12px",
+        fontWeight: 900,
+        fontSize: 12,
+        color: "#0f172a",
         cursor: "pointer",
-        boxShadow: "0 8px 20px rgba(0,0,0,0.15)",
+        boxShadow: "0 10px 18px rgba(2,6,23,0.03)",
+    },
+    pillBtnOn: { background: "#0f172a", color: "#ffffff", borderColor: "#0f172a" },
+
+    btn: {
+        height: 40,
+        padding: "0 12px",
+        borderRadius: 14,
+        border: "1px solid rgba(15,23,42,0.10)",
+        cursor: "pointer",
+        fontWeight: 900,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 10,
+        whiteSpace: "nowrap",
+    },
+    btnIcon: { width: 28, height: 28, borderRadius: 10, display: "grid", placeItems: "center", background: "rgba(15,23,42,0.06)" },
+    btnPrimary: { background: "#0f172a", color: "#fff", boxShadow: "0 12px 26px rgba(2,6,23,0.16)" },
+    btnNeutral: { background: "#ffffff", color: "#0f172a" },
+    btnSoft: { background: "#f8fafc", color: "#0f172a" },
+
+    list: { display: "grid", gap: 12 },
+
+    card: {
+        textAlign: "left",
+        width: "100%",
+        background: "rgba(255,255,255,0.92)",
+        borderRadius: 16,
+        border: "1px solid rgba(15,23,42,0.08)",
+        boxShadow: "0 16px 34px rgba(2,6,23,0.08)",
+        padding: 14,
+        cursor: "pointer",
+        transition: "transform 0.12s ease, box-shadow 0.12s ease",
     },
 
+    cardTop: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 },
+    idCol: { display: "grid", gap: 4, minWidth: 0 },
+    requestId: { fontSize: 16, fontWeight: 950, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+    timeText: { fontSize: 12, fontWeight: 850, color: "#64748b" },
 
+    badge: {
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        border: "1px solid rgba(15,23,42,0.12)",
+        padding: "6px 10px",
+        fontSize: 12,
+        fontWeight: 950,
+        whiteSpace: "nowrap",
+    },
+
+    cardBody: { marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 },
+    kv: { display: "grid", gap: 4, minWidth: 0 },
+    k: { fontSize: 11, fontWeight: 950, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em" },
+    v: { fontSize: 13, fontWeight: 900, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+
+    addressLine: {
+        marginTop: 10,
+        fontSize: 13,
+        fontWeight: 850,
+        color: "#334155",
+        background: "rgba(15,23,42,0.04)",
+        border: "1px solid rgba(15,23,42,0.06)",
+        borderRadius: 12,
+        padding: "8px 10px",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+    },
+
+    emptyBox: {
+        background: "rgba(255,255,255,0.92)",
+        borderRadius: 16,
+        border: "1px dashed rgba(15,23,42,0.18)",
+        boxShadow: "0 12px 26px rgba(2,6,23,0.06)",
+        padding: 18,
+    },
+    emptyTitle: { fontWeight: 950, color: "#0f172a" },
+    emptyText: { marginTop: 4, fontSize: 13, color: "#64748b", fontWeight: 850 },
 };

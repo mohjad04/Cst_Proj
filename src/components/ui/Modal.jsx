@@ -40,6 +40,6 @@ const modal = {
     background: "white",
     borderRadius: 14,
     padding: 20,
-    width: "min(520px, 100%)",
-    boxShadow: "0 30px 60px rgba(0,0,0,0.25)",
+    maxHeight: "calc(100vh - 48px)",
+    overflow: "auto",
 };

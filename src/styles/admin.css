@@ -1,0 +1,486 @@
+/* ---------------------------- Admin Shell CSS ---------------------------- */
+
+.adminShell {
+    height: 100%;
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    background: #f4f6fb;
+}
+
+.adminShell.isCollapsed {
+    grid-template-columns: 88px 1fr;
+}
+
+.adminSidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    padding: 14px;
+    background: linear-gradient(180deg, var(--bg), #070d18);
+    color: rgba(255, 255, 255, 0.92);
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.sbTop {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 8px 10px;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.brandMark {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    background: radial-gradient(circle at 30% 30%, rgba(37, 99, 235, 0.9), rgba(37, 99, 235, 0.25));
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.brandText {
+    min-width: 0;
+}
+
+.brandTitle {
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}
+
+.brandSub {
+    font-size: 12px;
+    opacity: 0.75;
+    margin-top: -2px;
+}
+
+.iconBtn {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.9);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+}
+
+.adminShell.isCollapsed .collapseBtn svg {
+    transform: rotate(180deg);
+}
+
+.sbNav {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 4px 6px;
+}
+
+.sbGroupLabel {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.55;
+    margin: 10px 8px 6px;
+}
+
+.sbLink {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 10px;
+    border-radius: 14px;
+    color: rgba(255, 255, 255, 0.88);
+    border: 1px solid transparent;
+    transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.sbLink:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.sbLink.active {
+    background: rgba(37, 99, 235, 0.18);
+    border-color: rgba(37, 99, 235, 0.35);
+}
+
+.sbIcon {
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sbText {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.adminShell.isCollapsed .brandText,
+.adminShell.isCollapsed .sbGroupLabel,
+.adminShell.isCollapsed .sbText,
+.adminShell.isCollapsed .btnText,
+.adminShell.isCollapsed .userMeta {
+    display: none;
+}
+
+.sbBottom {
+    margin-top: auto;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.userCard {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.userAvatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.userLabel {
+    font-size: 12px;
+    opacity: 0.7;
+}
+
+.userValue {
+    font-weight: 650;
+    font-size: 13px;
+    opacity: 0.95;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.btnDanger {
+    width: 100%;
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    background: rgba(239, 68, 68, 0.16);
+    color: rgba(255, 255, 255, 0.92);
+    padding: 10px 12px;
+    border-radius: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.btnDanger:hover {
+    background: rgba(239, 68, 68, 0.22);
+}
+
+.btnIcon {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.adminMain {
+    display: grid;
+    grid-template-rows: 72px 1fr;
+    min-width: 0;
+}
+
+.adminHeader {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: rgba(244, 246, 251, 0.75);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.hdrTitle {
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 0.2px;
+}
+
+.hdrCrumb {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+}
+
+.hdrPill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 12px;
+    border-radius: 999px;
+    background: #fff;
+    border: 1px solid var(--border);
+    color: #0f172a;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--primary);
+}
+
+.adminContent {
+    min-width: 0;
+    padding: 16px 24px 24px;
+    margin: 0;
+}
+
+.contentInner {
+    max-width: 1400px;
+    margin: 0 auto;
+    min-width: 0;
+}
+
+/* FORCE SIDEBAR CONTRAST (fix unreadable nav) */
+.adminSidebar {
+    background: #0b1220 !important;
+    color: rgba(255, 255, 255, 0.92) !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.adminSidebar .sbGroupLabel {
+    opacity: 0.75 !important;
+    color: rgba(255, 255, 255, 0.70) !important;
+}
+
+.adminSidebar .sbLink {
+    color: rgba(255, 255, 255, 0.92) !important;
+}
+
+.adminSidebar .sbLink:hover {
+    background: rgba(255, 255, 255, 0.07) !important;
+    border-color: rgba(255, 255, 255, 0.10) !important;
+}
+
+.adminSidebar .sbLink.active {
+    background: rgba(37, 99, 235, 0.22) !important;
+    border-color: rgba(37, 99, 235, 0.38) !important;
+}
+
+.adminSidebar .sbIcon {
+    background: rgba(255, 255, 255, 0.08) !important;
+    border-color: rgba(255, 255, 255, 0.10) !important;
+    color: rgba(255, 255, 255, 0.95) !important;
+}
+
+.adminSidebar .brandTitle,
+.adminSidebar .brandSub,
+.adminSidebar .userLabel,
+.adminSidebar .userValue {
+    color: rgba(255, 255, 255, 0.92) !important;
+}
+
+.adminSidebar svg {
+    color: rgba(255, 255, 255, 0.95) !important;
+}
+
+/* ---------------------------- Premium Topbar ---------------------------- */
+
+.topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    height: 64px;
+    padding: 0 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+
+    background: rgba(244, 246, 251, 0.92);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.topbarLeft {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.topbarTitle {
+    font-size: 16px;
+    font-weight: 850;
+    letter-spacing: 0.2px;
+    color: #0f172a;
+    line-height: 1.1;
+}
+
+.topbarCrumb {
+    font-size: 12px;
+    color: #64748b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.topbarRight {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.topbarMeta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.metaKey {
+    font-size: 12px;
+    color: #64748b;
+    font-weight: 650;
+}
+
+.metaVal {
+    font-size: 12px;
+    color: #0f172a;
+    font-weight: 850;
+}
+
+.topbarBtn {
+    height: 40px;
+    padding: 0 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(15, 23, 42, 0.10);
+    background: rgba(255, 255, 255, 0.9);
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.topbarBtn:hover {
+    background: #fff;
+}
+
+.topbarBtnIcon {
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+    display: grid;
+    place-items: center;
+    background: rgba(37, 99, 235, 0.10);
+    border: 1px solid rgba(37, 99, 235, 0.18);
+}
+
+.profileBtn {
+    height: 40px;
+    max-width: 260px;
+    padding: 0 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(15, 23, 42, 0.10);
+    background: rgba(255, 255, 255, 0.9);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+}
+
+.profileBtn:hover {
+    background: #fff;
+}
+
+.profileDot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: #22c55e;
+    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12);
+}
+
+.profileText {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.05;
+}
+
+.profileName {
+    font-weight: 900;
+    font-size: 12px;
+    color: #0f172a;
+}
+
+.profileMail {
+    font-size: 12px;
+    color: #64748b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* small screens */
+@media (max-width: 900px) {
+    .topbarMeta {
+        display: none;
+    }
+
+    .profileMail {
+        display: none;
+    }
+}
+
+.topbarTitleBig {
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 0.2px;
+    color: #0f172a;
+    line-height: 1.1;
+}
+
+@media (max-width: 900px) {
+    .topbarTitleBig {
+        font-size: 18px;
+    }
+
+    .profileMail {
+        display: none;
+    }
+}
