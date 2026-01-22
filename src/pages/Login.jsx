@@ -2,13 +2,15 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import "../styles/login.css";
+import cstLogo from "../layouts/ic_cst_logo.png";
+
 
 export default function Login() {
   const { login, loading } = useAuth();
   const navigate = useNavigate();
 
-  const [email, setEmail] = useState("admin@cst.test");
-  const [password, setPassword] = useState("Admin123");
+  const [email, setEmail] = useState("shaden@gmail.com");
+  const [password, setPassword] = useState("123456");
   const [error, setError] = useState("");
 
   async function onSubmit(e) {
@@ -16,8 +18,13 @@ export default function Login() {
     setError("");
     try {
       const res = await login(email, password);
-      if (res.user.role === "admin") navigate("/admin", { replace: true });
-      else navigate("/staff", { replace: true });
+
+      if (res?.user?.role !== "admin") {
+        setError("Admins only. Please use an admin account.");
+        return;
+      }
+
+      navigate("/admin", { replace: true });
     } catch (err) {
       setError(err.message || "Login failed");
     }
@@ -25,41 +32,63 @@ export default function Login() {
 
   return (
     <div className="login-page">
-      <div className="login-card">
-        <h1>CST</h1>
-        <p className="subtitle">Admin & Office Employee Portal</p>
+      <div className="login-shell">
 
-        <div className="demo">
-          <b>Demo Accounts</b>
-          <div>admin@cst.test / Admin123</div>
-          <div>staff@cst.test / Staff123</div>
+        {/* LEFT: Logo only */}
+        <div className="login-brand">
+          <img className="login-left-logo" src={cstLogo} alt="CST logo" />
         </div>
 
-        <form onSubmit={onSubmit}>
-          <label>Email</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Enter your email"
-            required
-          />
+        {/* RIGHT: Form */}
+        <div className="login-panel">
+          <div className="login-card">
+            <div className="card-head">
+              <div className="card-title">Sign in</div>
+              <div className="card-subtitle">Use your admin credentials</div>
+            </div>
 
-          <label>Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter your password"
-            required
-          />
+            <div className="demo">
+              <div className="demo-title">Demo</div>
+              <div className="demo-row">
+                <span>shaden@gmail.com</span>
+                <span className="sep">•</span>
+                <span>123456</span>
+              </div>
+            </div>
 
-          {error && <div className="error">{error}</div>}
+            <form onSubmit={onSubmit} className="login-form">
+              <label>Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="admin@company.com"
+                autoComplete="username"
+                required
+              />
 
-          <button type="submit" disabled={loading}>
-            {loading ? "Signing in..." : "Login"}
-          </button>
-        </form>
+              <label>Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                required
+              />
+
+              {error && <div className="error">{error}</div>}
+
+              <button type="submit" disabled={loading}>
+                {loading ? "Signing in..." : "Sign in"}
+              </button>
+
+              <div className="hint">
+                Having issues? Contact your system administrator.
+              </div>
+            </form>
+          </div>
+        </div>
       </div>
     </div>
   );

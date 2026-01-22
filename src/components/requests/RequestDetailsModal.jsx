@@ -192,6 +192,8 @@ export default function RequestDetailsModal({ request, onClose, onAddSla }) {
     const status = String(request?.status || "").toLowerCase();
 
     const statusMeta = useMemo(() => getStatusMeta(status), [status]);
+    const slaDisabled = status === "closed";
+
 
     return (
         <Modal onClose={onClose}>
@@ -366,23 +368,41 @@ export default function RequestDetailsModal({ request, onClose, onAddSla }) {
                     <Card title="SLA">
                         <div style={styles.slaBox}>
                             <div style={styles.slaHint}>
-                                {request.status === "triaged"
-                                    ? "SLA is available for triaged requests."
-                                    : "You can add/update an SLA once the request new/triaged (or if your flow allows it)."}
+                                {status === "new" ? (
+                                    <>This request has no SLA yet. Click <b>Add SLA</b> to create one.</>
+                                ) : (
+                                    <>
+                                        You can <b>update</b> the SLA anytime.
+                                        <br />
+                                        <span style={{ color: "#64748b" }}>
+                                            Team can be changed <b>only</b> when status is <b>Assigned</b>.
+                                        </span>
+                                    </>
+                                )}
                             </div>
                         </div>
                     </Card>
-
 
                     {/* Actions */}
                     <div style={styles.actions}>
                         <button onClick={onClose} style={btnSecondary}>
                             Close
                         </button>
-                        <button onClick={onAddSla} style={btnPrimary}>
-                            {request.status === "triaged" ? "View SLA" : "Add SLA"}
+
+                        <button
+                            onClick={() => onAddSla({ mode: status === "new" ? "create" : "update", request })}
+                            style={{
+                                ...btnPrimary,
+                                ...(slaDisabled ? { opacity: 0.55, cursor: "not-allowed" } : null),
+                            }}
+                            disabled={slaDisabled}
+                            title={slaDisabled ? "SLA cannot be updated when request is closed" : ""}
+                        >
+                            {slaDisabled ? "SLA Locked" : status === "new" ? "Add SLA" : "Update SLA"}
                         </button>
+
                     </div>
+
                 </div>
             </div>
         </Modal>

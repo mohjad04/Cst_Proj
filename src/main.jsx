@@ -5,6 +5,8 @@ import App from "./app/App.jsx";
 import { AuthProvider } from "./auth/AuthContext.jsx";
 import "./styles/app.css";
 import "./styles/admin.css";
+import "leaflet/dist/leaflet.css";
+
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>

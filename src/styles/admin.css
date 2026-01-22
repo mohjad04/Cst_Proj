@@ -1,28 +1,39 @@
 /* ---------------------------- Admin Shell CSS ---------------------------- */
 
 .adminShell {
-    height: 100%;
-    display: grid;
-    grid-template-columns: 280px 1fr;
-    background: #f4f6fb;
+    --sbW: 280px;
+    /* sidebar width */
+    --sbWc: 92px;
+    /* collapsed sidebar width */
+    --topH: 72px;
+    /* header height */
+
+    height: 100vh;
+    width: 100%;
+    overflow: hidden;
+    /* IMPORTANT: window won't scroll */
 }
 
+/* if collapsed */
 .adminShell.isCollapsed {
-    grid-template-columns: 88px 1fr;
+    --sbW: var(--sbWc);
 }
 
 .adminSidebar {
-    position: sticky;
+    position: fixed;
     top: 0;
+    left: 0;
     height: 100vh;
-    padding: 14px;
-    background: linear-gradient(180deg, var(--bg), #070d18);
-    color: rgba(255, 255, 255, 0.92);
-    border-right: 1px solid rgba(255, 255, 255, 0.06);
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
+    width: var(--sbW);
+    overflow: hidden;
+    /* sidebar doesn’t scroll with page */
+    z-index: 50;
+
+    /* make sure no gap */
+    margin: 0;
+    border-radius: 0;
 }
+
 
 .sbTop {
     display: flex;
@@ -78,11 +89,15 @@
     transform: rotate(180deg);
 }
 
-.sbNav {
+/* .sbNav {
     display: flex;
     flex-direction: column;
     gap: 6px;
     padding: 4px 6px;
+} */
+.sbNav {
+    flex: 1;
+    overflow: auto;
 }
 
 .sbGroupLabel {
@@ -141,11 +156,13 @@
 
 .sbBottom {
     margin-top: auto;
-    padding: 6px;
+    padding: 24px 6px 14px;
+    /* ✅ more top padding = lower */
     display: flex;
     flex-direction: column;
     gap: 10px;
 }
+
 
 .userCard {
     display: flex;
@@ -207,9 +224,9 @@
 }
 
 .adminMain {
-    display: grid;
-    grid-template-rows: 72px 1fr;
-    min-width: 0;
+    margin-left: var(--sbW);
+    height: 100vh;
+    overflow: hidden;
 }
 
 .adminHeader {
@@ -259,23 +276,33 @@
 }
 
 .adminContent {
-    min-width: 0;
-    padding: 16px 24px 24px;
-    margin: 0;
+    height: 100vh;
+    overflow: auto;
+    padding-top: var(--topH);
+    /* pushes content under fixed header */
 }
 
 .contentInner {
-    max-width: 1400px;
-    margin: 0 auto;
-    min-width: 0;
+    padding: 18px;
 }
 
 /* FORCE SIDEBAR CONTRAST (fix unreadable nav) */
 .adminSidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: var(--sbW);
+    z-index: 50;
+
+    display: flex;
+    flex-direction: column;
+
     background: #0b1220 !important;
     color: rgba(255, 255, 255, 0.92) !important;
     border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
 }
+
 
 .adminSidebar .sbGroupLabel {
     opacity: 0.75 !important;
@@ -316,19 +343,15 @@
 /* ---------------------------- Premium Topbar ---------------------------- */
 
 .topbar {
-    position: sticky;
+    position: fixed;
     top: 0;
-    z-index: 20;
-    height: 64px;
-    padding: 0 18px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 14px;
+    left: var(--sbW);
+    right: 0;
+    height: var(--topH);
+    z-index: 40;
 
-    background: rgba(244, 246, 251, 0.92);
-    backdrop-filter: blur(10px);
-    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    /* keep it looking clean */
+    margin: 0;
 }
 
 .topbarLeft {
@@ -483,4 +506,34 @@
     .profileMail {
         display: none;
     }
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+}
+
+.brandLogo {
+    width: 55px;
+    /* ✅ bigger box */
+    height: 52px;
+    /* ✅ bigger box */
+    padding: 0;
+    /* ✅ remove padding that shrinks the image */
+    object-fit: cover;
+    /* ✅ makes the logo fill the box */
+    border-radius: 18px;
+
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+}
+
+/* when sidebar collapsed */
+.adminShell.isCollapsed .brandLogo {
+    width: 44px;
+    height: 44px;
+    padding: 5px;
 }

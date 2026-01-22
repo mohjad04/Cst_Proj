@@ -976,8 +976,28 @@ function normalizeTeam(team, staff) {
 
 function labelForSkill(options, value) {
   const opt = (options || []).find((s) => s.value === value);
-  return opt?.label || value;
+  const raw = opt?.label || value;
+  const cleaned = cleanSkillLabel(raw);
+  return cleaned || ""; // will be removed by .filter(Boolean)
 }
+
+function cleanSkillLabel(label) {
+  let s = String(label || "");
+
+  // remove long hex ids
+  s = s.replace(/\b[0-9a-f]{20,}\b/gi, "");
+
+  // remove leftover separators/bullets/colons at start/end
+  s = s.replace(/^[\s•·:|—–-]+/g, "").replace(/[\s•·:|—–-]+$/g, "");
+
+  // normalize spaces
+  s = s.replace(/\s+/g, " ").trim();
+
+  return s;
+}
+
+
+
 
 /* ================================ PAGE ================================ */
 
@@ -1107,6 +1127,8 @@ export default function Teams() {
       return next;
     });
   }
+
+
   function toggleExpandSkills(teamId) {
     setExpandedSkills((prev) => {
       const next = new Set(prev);
@@ -1121,7 +1143,7 @@ export default function Teams() {
       {/* top actions */}
       <div style={styles.actionsRow}>
         <div style={styles.actionsLeft}>
-          <Chip Chip tone="blue">{stats.total} teams</Chip>
+          <Chip tone="blue">{stats.total} teams</Chip>
           <Chip tone="neutral">{stats.active} active</Chip>
           <Chip tone="neutral">{stats.disabled} disabled</Chip>
         </div>
@@ -1229,7 +1251,10 @@ export default function Teams() {
 
 
                   const zonesArr = isArr(t.zones) ? t.zones : [];
-                  const skillsArr = isArr(t.skills) ? t.skills.map((v) => labelForSkill(skillsOptions, v)) : [];
+                  const skillsArr =
+                    isArr(t.skills)
+                      ? t.skills.map((v) => labelForSkill(skillsOptions, v)).filter(Boolean)
+                      : [];
 
 
                   const skillsText =
@@ -1281,7 +1306,7 @@ export default function Teams() {
                         {zonesArr.length === 0 ? (
                           <span style={styles.muted}>—</span>
                         ) : (
-                          <div style={styles.membersBlock}>
+                          <div style={{ ...styles.membersBlock, minWidth: 0 }}>
                             <div style={{ ...styles.stackList, ...(isZonesOpen ? styles.stackOpen : styles.stackClosed) }}>
                               {(isZonesOpen ? zonesArr : zonesArr.slice(0, 2)).map((z) => (
                                 <div key={z} style={styles.stackLine} title={z}>
@@ -1307,7 +1332,7 @@ export default function Teams() {
                         {skillsArr.length === 0 ? (
                           <span style={styles.muted}>—</span>
                         ) : (
-                          <div style={styles.membersBlock}>
+                          <div style={{ ...styles.membersBlock, minWidth: 0 }}>
                             <div style={{ ...styles.stackList, ...(isSkillsOpen ? styles.stackOpen : styles.stackClosed) }}>
                               {(isSkillsOpen ? skillsArr : skillsArr.slice(0, 2)).map((s) => (
                                 <div key={s} style={styles.stackLine} title={s}>
@@ -2197,8 +2222,12 @@ const styles = {
     borderColor: "rgba(59,130,246,0.22)",
     boxShadow: "0 14px 22px rgba(59,130,246,0.08)",
   },
-  staffEmail: { fontWeight: 900, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 420 },
-  staffName: { fontSize: 12, color: "#6b7280", marginTop: 2 },
+  staffEmail: {
+    fontWeight: 900,
+    fontSize: 14,
+    whiteSpace: "normal",
+    wordBreak: "break-word",
+  }, staffName: { fontSize: 12, color: "#6b7280", marginTop: 2 },
   staffEmpty: { padding: 12, color: "#6b7280", fontSize: 13, textAlign: "center" },
   stackList: { display: "grid", gap: 2 },
   stackClosed: { maxHeight: 44, overflow: "hidden" },
@@ -2206,10 +2235,12 @@ const styles = {
   stackLine: {
     fontSize: 13,
     fontWeight: 800,
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    maxWidth: 360,
+    whiteSpace: "normal",      // ✅ allow wrap
+    overflow: "visible",
+    textOverflow: "clip",
+    maxWidth: "100%",          // ✅ don't cap to 360px
+    wordBreak: "break-word",   // ✅ break long emails/zone tokens
+    lineHeight: 1.25,
   },
 
 };

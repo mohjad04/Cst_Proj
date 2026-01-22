@@ -680,7 +680,7 @@ export default function Categories() {
         <div />
         <div style={{ display: "flex", gap: 10 }}>
           <button
-            style={{ ...styles.btn, background: "#111827" }}
+            style={{ ...styles.btn, background: "#111827", color: "white" }}
             onClick={() => setCatModal({ open: true, mode: "create", item: null })}
           >
             + Add Category

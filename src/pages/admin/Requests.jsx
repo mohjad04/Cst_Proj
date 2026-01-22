@@ -397,25 +397,36 @@ export default function Requests() {
                     request={openRequest}
                     onClose={() => setOpenRequest(null)}
                     onAddSla={async () => {
-                        setOpenRequest(null);
+                        const req = openRequest;      // ✅ keep current request
+                        setOpenRequest(null);         // close details modal
 
-                        if (openRequest.status === "triaged") {
-                            const sla = await getSlaByRequest(openRequest.request_id);
+                        const st = String(req.status || "").toLowerCase();
 
+                        // 🚫 CLOSED: block SLA update/create
+                        if (st === "closed") {
+                            // optional: show toast here if you have it
+                            // setToast("Closed requests cannot update SLA");
+                            return;
+                        }
+
+                        // ✅ CREATE only if NEW
+                        if (st === "new") {
+                            setSlaModal({ open: true, mode: "create", request: req });
+                            return;
+                        }
+
+                        // ✅ otherwise UPDATE (triaged/assigned/in_progress/resolved...)
+                        const sla = await getSlaByRequest(req.request_id).catch(() => null);
+
+                        if (sla) {
                             setSlaModal({
                                 open: true,
                                 mode: "edit",
-                                request: {
-                                    ...openRequest,
-                                    sla_policy: sla,
-                                },
+                                request: { ...req, sla_policy: sla },
                             });
                         } else {
-                            setSlaModal({
-                                open: true,
-                                mode: "create",
-                                request: openRequest,
-                            });
+                            // fallback if backend says no SLA exists yet
+                            setSlaModal({ open: true, mode: "create", request: req });
                         }
                     }}
                 />
