@@ -460,7 +460,12 @@ export default function Users() {
               setCreateOpen(false);
               showToast("User created");
             } catch (e) {
-              setError(e?.message || "Failed to create user");
+              const detail = e?.response?.data?.detail;
+              const msg = Array.isArray(detail)
+                ? detail.map(d => `${d.loc?.join(".")}: ${d.msg}`).join(" | ")
+                : (detail || e?.message || "Failed");
+
+              setError(msg);
             }
           }}
         />
