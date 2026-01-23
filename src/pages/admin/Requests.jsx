@@ -170,6 +170,11 @@ export default function Requests() {
         request: null,
     });
     const [showSlaRules, setShowSlaRules] = useState(false);
+    const [priorityFilter, setPriorityFilter] = useState("all"); // all | P1..P5
+    const [zoneFilter, setZoneFilter] = useState("all");         // all | ZONE-R1-C1...
+    const [dateFrom, setDateFrom] = useState("");                // "YYYY-MM-DD"
+    const [dateTo, setDateTo] = useState("");                    // "YYYY-MM-DD"
+
 
     async function reload() {
         setLoading(true);
@@ -238,29 +243,83 @@ export default function Requests() {
     const filtered = useMemo(() => {
         const query = q.trim().toLowerCase();
 
-        return rows.filter((r) => {
-            const s = String(r.status || "").toLowerCase();
+        // convert dateFrom/dateTo to real boundaries (local time)
+        const fromMs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
+        const toMs = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null;
 
-            if (statusFilter !== "all" && s !== statusFilter) return false;
+        return rows
+            .filter((r) => {
+                const s = String(r.status || "").toLowerCase();
+                if (statusFilter !== "all" && s !== statusFilter) return false;
 
-            if (!query) return true;
+                // ✅ priority
+                const p = r?.priority ? String(r.priority) : "";
+                if (priorityFilter !== "all" && p !== priorityFilter) return false;
 
-            // search across common fields (safe)
-            const hay = [
-                r.request_id,
-                r.category,
-                r.sub_category,
-                r.priority,
-                r.zone_name,
-                r.address_hint,
-            ]
-                .filter(Boolean)
-                .join(" ")
-                .toLowerCase();
+                // ✅ zone
+                const z = String(r.zone_name || r.location?.zone_name || "");
+                if (zoneFilter !== "all" && z !== zoneFilter) return false;
 
-            return hay.includes(query);
+                // ✅ dates
+                const created = r.timestamps?.created_at || r.created_at;
+                const createdMs = created ? new Date(created).getTime() : NaN;
+                if (fromMs != null && Number.isFinite(createdMs) && createdMs < fromMs) return false;
+                if (toMs != null && Number.isFinite(createdMs) && createdMs > toMs) return false;
+                if ((fromMs != null || toMs != null) && !Number.isFinite(createdMs)) return false;
+
+                // ✅ search
+                if (!query) return true;
+                const hay = [
+                    r.request_id,
+                    r.category,
+                    r.sub_category,
+                    r.priority,
+                    r.zone_name || r.location?.zone_name,
+                    r.address_hint,
+                ]
+                    .filter(Boolean)
+                    .join(" ")
+                    .toLowerCase();
+
+                return hay.includes(query);
+            })
+            .sort((a, b) => {
+                const aT = new Date(a.timestamps?.created_at || a.created_at || 0).getTime();
+                const bT = new Date(b.timestamps?.created_at || b.created_at || 0).getTime();
+                return bT - aT;
+            });
+    }, [rows, q, statusFilter, priorityFilter, zoneFilter, dateFrom, dateTo]);
+
+    const priorityOptions = useMemo(() => {
+        const set = new Set();
+        rows.forEach((r) => {
+            const p = r?.priority;
+            if (p) set.add(String(p));
         });
-    }, [rows, q, statusFilter]);
+        return ["all", ...Array.from(set).sort()];
+    }, [rows]);
+
+    const zoneOptions = useMemo(() => {
+        const set = new Set();
+        rows.forEach((r) => {
+            const z = r?.zone_name || r?.location?.zone_name;
+            if (z) set.add(String(z));
+        });
+        return ["all", ...Array.from(set).sort()];
+    }, [rows]);
+
+    const hasAnyExtraFilter = useMemo(() => {
+        return (
+            statusFilter !== "all" ||
+            priorityFilter !== "all" ||
+            zoneFilter !== "all" ||
+            !!dateFrom ||
+            !!dateTo ||
+            !!q.trim()
+        );
+    }, [statusFilter, priorityFilter, zoneFilter, dateFrom, dateTo, q]);
+
+
 
     async function openDetails(r) {
         try {
@@ -296,17 +355,63 @@ export default function Requests() {
                     </div>
 
 
-                    <div style={styles.searchWrap}>
-                        <span style={styles.searchIcon}>
-                            <Icon name="search" />
-                        </span>
+                    <div style={styles.searchRow}>
+                        <div style={styles.searchWrap}>
+                            <span style={styles.searchIcon}>
+                                <Icon name="search" />
+                            </span>
+                            <input
+                                style={styles.searchInput}
+                                placeholder="Search by request id, category, zone, priority…"
+                                value={q}
+                                onChange={(e) => setQ(e.target.value)}
+                            />
+                        </div>
+
+                        <select
+                            style={styles.selectSm}
+                            value={priorityFilter}
+                            onChange={(e) => setPriorityFilter(e.target.value)}
+                        >
+                            {priorityOptions.map((p) => (
+                                <option key={p} value={p}>
+                                    {p === "all" ? "All priorities" : p}
+                                </option>
+                            ))}
+                        </select>
+
+                        <select
+                            style={styles.selectSm}
+                            value={zoneFilter}
+                            onChange={(e) => setZoneFilter(e.target.value)}
+                        >
+                            {zoneOptions.map((z) => (
+                                <option key={z} value={z}>
+                                    {z === "all" ? "All zones" : z}
+                                </option>
+                            ))}
+                        </select>
+
                         <input
-                            style={styles.searchInput}
-                            placeholder="Search by request id, category, zone, priority…"
-                            value={q}
-                            onChange={(e) => setQ(e.target.value)}
+                            type="date"
+                            style={styles.dateInputSm}
+                            value={dateFrom}
+                            onChange={(e) => setDateFrom(e.target.value)}
                         />
+
+                        <span style={styles.dateDashSm}>—</span>
+
+                        <input
+                            type="date"
+                            style={styles.dateInputSm}
+                            value={dateTo}
+                            onChange={(e) => setDateTo(e.target.value)}
+                        />
+
+
                     </div>
+
+
 
                     <div style={styles.pillsRow}>
                         <Pill active={statusFilter === "all"} onClick={() => setStatusFilter("all")}>All</Pill>
@@ -403,7 +508,7 @@ export default function Requests() {
                         const st = String(req.status || "").toLowerCase();
 
                         // 🚫 CLOSED: block SLA update/create
-                        if (st === "closed") {
+                        if (st === "closed" || st === "resolved") {
                             // optional: show toast here if you have it
                             // setToast("Closed requests cannot update SLA");
                             return;
@@ -543,6 +648,7 @@ const styles = {
         borderRadius: 14,
         height: 44,
         boxShadow: "0 10px 18px rgba(2,6,23,0.04)",
+        flex: "1 1 420px",
     },
     searchIcon: { position: "absolute", left: 12, color: "#64748b", display: "grid", placeItems: "center" },
     searchInput: {
@@ -646,4 +752,112 @@ const styles = {
     },
     emptyTitle: { fontWeight: 950, color: "#0f172a" },
     emptyText: { marginTop: 4, fontSize: 13, color: "#64748b", fontWeight: 850 },
+    filtersRow: {
+        display: "grid",
+        gridTemplateColumns: "220px 260px 1fr auto",
+        gap: 10,
+        alignItems: "center",
+    },
+
+    select: {
+        width: "100%",
+        height: 44,
+        padding: "0 12px",
+        borderRadius: 14,
+        border: "1px solid rgba(15,23,42,0.10)",
+        outline: "none",
+        background: "#ffffff",
+        boxShadow: "0 10px 18px rgba(2,6,23,0.04)",
+        fontWeight: 850,
+        color: "#0f172a",
+        cursor: "pointer",
+    },
+
+    dateRow: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        width: "100%",
+        background: "#ffffff",
+        border: "1px solid rgba(15,23,42,0.10)",
+        borderRadius: 14,
+        padding: "0 10px",
+        height: 44,
+        boxShadow: "0 10px 18px rgba(2,6,23,0.04)",
+    },
+
+    dateInput: {
+        height: 36,
+        border: "none",
+        outline: "none",
+        fontWeight: 850,
+        color: "#0f172a",
+        background: "transparent",
+        width: 150,
+    },
+
+    dateDash: { color: "#94a3b8", fontWeight: 900 },
+
+    clearBtn: {
+        height: 44,
+        padding: "0 12px",
+        borderRadius: 14,
+        border: "1px solid rgba(15,23,42,0.10)",
+        background: "#ffffff",
+        fontWeight: 900,
+        cursor: "pointer",
+        boxShadow: "0 10px 18px rgba(2,6,23,0.04)",
+        color: "#0f172a",
+        whiteSpace: "nowrap",
+    },
+    searchRow: {
+        display: "flex",
+        gap: 10,
+        alignItems: "center",
+        flexWrap: "wrap",
+    },
+
+    selectSm: {
+        height: 44,
+        padding: "0 12px",
+        borderRadius: 14,
+        border: "1px solid rgba(15,23,42,0.10)",
+        outline: "none",
+        background: "#ffffff",
+        boxShadow: "0 10px 18px rgba(2,6,23,0.04)",
+        fontWeight: 850,
+        color: "#0f172a",
+        cursor: "pointer",
+        minWidth: 170,
+    },
+
+    dateInputSm: {
+        height: 44,
+        padding: "0 12px",
+        borderRadius: 14,
+        border: "1px solid rgba(15,23,42,0.10)",
+        outline: "none",
+        background: "#ffffff",
+        boxShadow: "0 10px 18px rgba(2,6,23,0.04)",
+        fontWeight: 850,
+        color: "#0f172a",
+        width: 160,
+    },
+
+    dateDashSm: { color: "#94a3b8", fontWeight: 900 },
+
+    clearBtnSm: {
+        height: 44,
+        padding: "0 12px",
+        borderRadius: 14,
+        border: "1px solid rgba(15,23,42,0.10)",
+        background: "#ffffff",
+        fontWeight: 900,
+        cursor: "pointer",
+        boxShadow: "0 10px 18px rgba(2,6,23,0.04)",
+        color: "#0f172a",
+        whiteSpace: "nowrap",
+    },
+
+
 };

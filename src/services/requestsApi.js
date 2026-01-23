@@ -54,3 +54,14 @@ export function listRequests({ status = "all", q = "" } = {}) {
 export function getRequestById(requestId) {
   return request(`/admin/requests/${requestId}`);
 }
+
+export function listFeedbackRequests(status = "closed", limit = 200) {
+  const params = new URLSearchParams();
+  params.set("status", status);
+  params.set("limit", String(limit));
+  return request(`/admin/requests/feedbacks?${params.toString()}`);
+}
+
+export function getRequestFeedbackDetails(requestId) {
+  return request(`/admin/requests/${requestId}/feedback-details`);
+}

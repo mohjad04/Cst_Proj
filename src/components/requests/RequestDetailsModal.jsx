@@ -192,7 +192,7 @@ export default function RequestDetailsModal({ request, onClose, onAddSla }) {
     const status = String(request?.status || "").toLowerCase();
 
     const statusMeta = useMemo(() => getStatusMeta(status), [status]);
-    const slaDisabled = status === "closed";
+    const slaDisabled = status === "closed" || status === "resolved";
 
 
     return (

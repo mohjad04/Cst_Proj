@@ -3,7 +3,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { getAdminDashboard } from "../../services/dashboardApi";
 import AdminGeoMap from "../../components/analytics/AdminGeoMap";
-import { listRequests } from "../../services/requestsApi";
+import {
+  listRequests,
+  listFeedbackRequests,
+  getRequestFeedbackDetails,
+} from "../../services/requestsApi";
 
 import {
   BarChart,
@@ -26,6 +30,174 @@ const clamp = (n, min = 0, max = 100) => Math.max(min, Math.min(max, n));
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);
 const fmtInt = (v) => (isNum(v) ? v.toLocaleString() : "—");
 const safeArr = (v) => (Array.isArray(v) ? v : []);
+
+const OPEN = new Set(["new", "triaged", "assigned", "in_progress"]);
+const RESOLVED = "resolved";
+const CLOSED = "closed";
+
+const toLower = (v) => String(v || "").toLowerCase();
+
+function fmtDateTime(v) {
+  if (!v) return "—";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString();
+}
+
+/**
+ * Supports BOTH shapes:
+ * 1) evidence: [{ uploaded_by: "citizen"|"employee", url, ... }]
+ * 2) evidence: { citizen: [...], employee: [...] }
+ */
+function splitEvidence(evidence) {
+  if (!evidence) return { citizen: [], employee: [] };
+
+  // object style: { citizen: [], employee: [] }
+  if (!Array.isArray(evidence) && typeof evidence === "object") {
+    return {
+      citizen: Array.isArray(evidence.citizen) ? evidence.citizen : [],
+      employee: Array.isArray(evidence.employee) ? evidence.employee : [],
+    };
+  }
+
+  // array style: [{ uploaded_by: ... }]
+  const arr = Array.isArray(evidence) ? evidence : [];
+  const citizen = arr.filter((x) => toLower(x.uploaded_by) === "citizen");
+  const employee = arr.filter((x) => {
+    const u = toLower(x.uploaded_by);
+    return u === "employee" || u === "staff" || u === "admin" || u === "municipality";
+  });
+
+  return { citizen, employee };
+}
+
+/**
+ * Citizen feedback can be in different shapes depending on what your API returns.
+ * We try the common ones safely.
+ */
+function extractCitizenFeedback(req) {
+  if (!req) return null;
+  return (
+    req.citizen_feedback ||
+    req.feedback ||
+    req?.computed_kpis?.citizen_feedback ||
+    req?.performance?.computed_kpis?.citizen_feedback ||
+    null
+  );
+}
+
+function EvidenceList({ items }) {
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) return <div style={styles.emptyStateSmall}>No evidence.</div>;
+
+  return (
+    <div style={{ display: "grid", gap: 10 }}>
+      {rows.map((ev, idx) => {
+        const url = ev.url || ev.path || ev.file_url;
+        const note = ev.note || ev.caption || "";
+        const at = ev.uploaded_at || ev.at || ev.created_at;
+
+        const isImg =
+          typeof url === "string" &&
+          (url.endsWith(".jpg") ||
+            url.endsWith(".jpeg") ||
+            url.endsWith(".png") ||
+            url.endsWith(".webp"));
+
+        return (
+          <div
+            key={url || idx}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "88px 1fr",
+              gap: 10,
+              border: "1px solid #e6eaf2",
+              borderRadius: 12,
+              padding: 10,
+              background: "#fff",
+            }}
+          >
+            <div
+              style={{
+                width: 88,
+                height: 66,
+                borderRadius: 10,
+                overflow: "hidden",
+                border: "1px solid #eef2f7",
+                background: "#f8fafc",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontWeight: 900,
+                color: "#64748b",
+                fontSize: 12,
+              }}
+            >
+              {isImg ? (
+                <img
+                  src={url}
+                  alt="evidence"
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                />
+              ) : (
+                "FILE"
+              )}
+            </div>
+
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontWeight: 950, color: "#0f172a" }}>
+                {ev.type || "evidence"}
+              </div>
+              <div style={{ fontSize: 12, color: "#64748b" }}>
+                {fmtDateTime(at)}
+              </div>
+              {note ? (
+                <div style={{ fontSize: 12, color: "#334155", fontWeight: 800 }}>
+                  {note}
+                </div>
+              ) : null}
+              {url ? (
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ fontSize: 12, fontWeight: 900, color: "#2563eb" }}
+                >
+                  Open file
+                </a>
+              ) : null}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Modal({ open, title, subtitle, onClose, children }) {
+  if (!open) return null;
+
+  return (
+    <div style={styles.modalOverlay} onMouseDown={onClose}>
+      <div
+        style={styles.modalCard}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div style={styles.modalHeader}>
+          <div>
+            <div style={styles.modalTitle}>{title}</div>
+            {subtitle ? <div style={styles.modalSubtitle}>{subtitle}</div> : null}
+          </div>
+          <button type="button" onClick={onClose} style={styles.modalCloseBtn}>
+            ✕
+          </button>
+        </div>
+        <div style={styles.modalBody}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
 
 function fmtHoursToHuman(hours) {
   if (!isNum(hours) || hours < 0) return "—";
@@ -205,6 +377,12 @@ export default function AdminDashboard() {
   const [geoRequests, setGeoRequests] = useState([]);
   const [geoLoading, setGeoLoading] = useState(false);
   const [geoErr, setGeoErr] = useState("");
+  const [feedbackTab, setFeedbackTab] = useState("resolved"); // resolved | closed
+  const [feedbackRows, setFeedbackRows] = useState([]);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [feedbackErr, setFeedbackErr] = useState("");
+  const [selectedReq, setSelectedReq] = useState(null);
+
 
 
   useEffect(() => {
@@ -252,6 +430,37 @@ export default function AdminDashboard() {
       clearInterval(id);
     };
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "feedbacks") return;
+
+    let alive = true;
+
+    async function loadFeedbacks() {
+      setFeedbackLoading(true);
+      setFeedbackErr("");
+      try {
+        const rows = await listFeedbackRequests(feedbackTab, 200); // ✅ join + split
+        if (!alive) return;
+        setFeedbackRows(Array.isArray(rows) ? rows : []);
+      } catch (e) {
+        console.error(e);
+        if (!alive) return;
+        setFeedbackErr("Failed to load feedback requests.");
+      } finally {
+        if (alive) setFeedbackLoading(false);
+      }
+    }
+
+    loadFeedbacks();
+    const id = setInterval(loadFeedbacks, 10000);
+
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [activeTab, feedbackTab]);
+
 
 
   const THEME = {
@@ -366,6 +575,7 @@ export default function AdminDashboard() {
     { id: "requests", label: "Requests" },
     { id: "users", label: "Users • Teams" },
     { id: "analytics", label: "Analytics" },
+    { id: "feedbacks", label: "Feedbacks" },
   ];
 
   const breakdownTabs = [
@@ -821,6 +1031,184 @@ export default function AdminDashboard() {
             </div>
           )}
 
+          {activeTab === "feedbacks" && (
+            <div style={styles.tabInner}>
+              <Section
+                title="Feedbacks"
+                subtitle="Resolved & Closed requests (evidence + citizen feedback)"
+                right={<span style={styles.smallPill}>QA</span>}
+              >
+                <MiniTabs
+                  tabs={[
+                    { id: "resolved", label: "Resolved" },
+                    { id: "closed", label: "Closed" },
+                  ]}
+                  value={feedbackTab}
+                  onChange={setFeedbackTab}
+                />
+
+                {feedbackErr ? (
+                  <div style={styles.errorBox}>{feedbackErr}</div>
+                ) : feedbackLoading && feedbackRows.length === 0 ? (
+                  <div style={styles.emptyState}>Loading feedbacks…</div>
+                ) : (
+                  <Card
+                    title={feedbackTab === "resolved" ? "Resolved Requests" : "Closed Requests"}
+                    subtitle="Click a request to view evidence and feedback"
+                  >
+                    {(() => {
+                      const filtered = feedbackRows.filter((r) => {
+                        const st = toLower(r.status);
+                        return feedbackTab === "resolved" ? st === RESOLVED : st === CLOSED;
+                      });
+
+                      if (!filtered.length) {
+                        return <div style={styles.emptyState}>No requests in this state.</div>;
+                      }
+
+                      return (
+                        <div style={styles.tableWrap}>
+                          <div style={styles.tableHead}>
+                            <div>ID</div>
+                            <div>Category</div>
+                            <div>Zone</div>
+                            <div>Created</div>
+                            <div>Status</div>
+                          </div>
+
+                          {filtered.map((r) => {
+                            const id = r.request_id || r.id || "—";
+                            const cat = r.category || "—";
+                            const sub = r.sub_category || r.sub_category_code || r.sub || "";
+                            const zone = r.zone_name || r.zone || "—";
+                            const created = r.created_at || r?.timestamps?.created_at;
+
+                            return (
+                              <button
+                                key={id}
+                                type="button"
+                                onClick={async () => {
+                                  const rid = r.request_id || r.id;
+                                  if (!rid) return;
+
+                                  // open quickly with skeleton state
+                                  setSelectedReq({ __loading: true, request_id: rid });
+
+                                  try {
+                                    const full = await getRequestFeedbackDetails(rid); // ✅ includes citizen_feedback
+                                    setSelectedReq(full);
+                                  } catch (e) {
+                                    console.error(e);
+                                    setSelectedReq(null);
+                                    setFeedbackErr("Failed to load request feedback details.");
+                                  }
+                                }}
+                                style={styles.tableRowBtn}
+                              >
+                                <div style={styles.tableCellStrong}>{id}</div>
+                                <div style={styles.tableCell}>{sub ? `${cat} • ${sub}` : cat}</div>
+                                <div style={styles.tableCell}>{zone}</div>
+                                <div style={styles.tableCell}>{fmtDateTime(created)}</div>
+                                <div style={styles.tableCell}>
+                                  <span style={styles.statusPill}>{toLower(r.status)}</span>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </Card>
+                )}
+
+                <Modal
+                  open={!!selectedReq}
+                  title={`Request ${selectedReq?.request_id || selectedReq?.id || ""}`}
+                  subtitle={`Status: ${toLower(selectedReq?.status)} • Zone: ${selectedReq?.zone_name || selectedReq?.zone || "—"}`}
+                  onClose={() => setSelectedReq(null)}
+                >
+                  {(() => {
+                    const r = selectedReq;
+                    if (!r) return null;
+
+                    if (r.__loading) {
+                      return <div style={styles.emptyState}>Loading request details…</div>;
+                    }
+
+                    const employee = Array.isArray(r.employee_evidence)
+                      ? r.employee_evidence
+                      : splitEvidence(r.evidence).employee;
+
+                    const citizen = Array.isArray(r.citizen_evidence)
+                      ? r.citizen_evidence
+                      : splitEvidence(r.evidence).citizen;
+
+                    const fb = r.citizen_feedback || extractCitizenFeedback(r);
+
+
+                    return (
+                      <div style={{ display: "grid", gap: 14 }}>
+                        <div style={styles.modalInfoGrid}>
+                          <div style={styles.modalInfoItem}>
+                            <div style={styles.modalInfoLabel}>Category</div>
+                            <div style={styles.modalInfoValue}>{r.category || "—"}</div>
+                          </div>
+                          <div style={styles.modalInfoItem}>
+                            <div style={styles.modalInfoLabel}>Sub-category</div>
+                            <div style={styles.modalInfoValue}>{r.sub_category || "—"}</div>
+                          </div>
+                          <div style={styles.modalInfoItem}>
+                            <div style={styles.modalInfoLabel}>Created</div>
+                            <div style={styles.modalInfoValue}>
+                              {fmtDateTime(r.created_at || r?.timestamps?.created_at)}
+                            </div>
+                          </div>
+                          <div style={styles.modalInfoItem}>
+                            <div style={styles.modalInfoLabel}>Address</div>
+                            <div style={styles.modalInfoValue}>{r.address_hint || "—"}</div>
+                          </div>
+                        </div>
+
+                        <Card title="Employees Evidence" subtitle="Uploaded by staff/employee">
+                          <EvidenceList items={employee} />
+                        </Card>
+
+                        <Card title="Citizen Evidence" subtitle="Uploaded by citizen">
+                          <EvidenceList items={citizen} />
+                        </Card>
+
+                        {toLower(r.status) === CLOSED ? (
+                          <>
+
+                            <Card title="Citizen Feedback" subtitle="Stars + comment">
+                              {fb ? (
+                                <div style={{ display: "grid", gap: 8 }}>
+                                  <div style={{ fontWeight: 950, color: "#0f172a" }}>
+                                    Stars: {fb.stars ?? "—"}
+                                  </div>
+                                  <div style={{ color: "#334155", fontWeight: 800 }}>
+                                    Comment: {fb.comment ?? "—"}
+                                  </div>
+                                  <div style={{ fontSize: 12, color: "#64748b" }}>
+                                    Submitted: {fmtDateTime(fb.submitted_at)}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={styles.emptyStateSmall}>No citizen feedback found.</div>
+                              )}
+                            </Card>
+                          </>
+                        ) : null}
+
+                      </div>
+                    );
+                  })()}
+                </Modal>
+              </Section>
+            </div>
+          )}
+
+
         </div>
       </div>
     </div>
@@ -1170,4 +1558,155 @@ const styles = {
     background: "linear-gradient(90deg, #ffffff 0%, #f1f5f9 50%, #ffffff 100%)",
     border: "1px solid #e6eaf2",
   },
+
+  tableWrap: {
+    display: "grid",
+    gap: 8,
+  },
+
+  tableHead: {
+    display: "grid",
+    gridTemplateColumns: "220px 1.4fr 240px 220px 160px",
+    gap: 10,
+    padding: "10px 12px",
+    borderRadius: 12,
+    background: "#f8fafc",
+    border: "1px solid #e6eaf2",
+    fontSize: 12,
+    fontWeight: 950,
+    color: "#334155",
+  },
+
+  tableRowBtn: {
+    appearance: "none",
+    border: "1px solid #e6eaf2",
+    background: "#fff",
+    borderRadius: 12,
+    padding: "12px 12px",
+    display: "grid",
+    gridTemplateColumns: "220px 1.4fr 240px 220px 160px",
+    gap: 10,
+    textAlign: "left",
+    cursor: "pointer",
+    boxShadow: "0 8px 18px rgba(2,6,23,0.04)",
+  },
+
+  tableCell: {
+    color: "#334155",
+    fontWeight: 800,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+
+  tableCellStrong: {
+    color: "#0f172a",
+    fontWeight: 950,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+
+  statusPill: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "6px 10px",
+    borderRadius: 999,
+    border: "1px solid #e2e8f0",
+    background: "#f8fafc",
+    fontWeight: 950,
+    color: "#0f172a",
+    textTransform: "lowercase",
+    width: "fit-content",
+  },
+
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(2,6,23,0.55)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    zIndex: 9999,
+  },
+
+  modalCard: {
+    width: "min(1100px, 96vw)",
+    maxHeight: "90vh",
+    overflow: "auto",
+    borderRadius: 18,
+    background: "#fff",
+    border: "1px solid #e6eaf2",
+    boxShadow: "0 30px 80px rgba(2,6,23,0.45)",
+  },
+
+  modalHeader: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+    padding: "14px 16px",
+    borderBottom: "1px solid #eef2f7",
+    background:
+      "linear-gradient(180deg, rgba(248,250,252,1) 0%, rgba(255,255,255,1) 100%)",
+  },
+
+  modalTitle: {
+    fontSize: 14,
+    fontWeight: 950,
+    color: "#0f172a",
+  },
+
+  modalSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    color: "#64748b",
+    fontWeight: 800,
+  },
+
+  modalCloseBtn: {
+    appearance: "none",
+    border: "1px solid #e2e8f0",
+    background: "#fff",
+    borderRadius: 12,
+    padding: "8px 10px",
+    cursor: "pointer",
+    fontWeight: 950,
+    color: "#0f172a",
+  },
+
+  modalBody: {
+    padding: 16,
+  },
+
+  modalInfoGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+    gap: 10,
+  },
+
+  modalInfoItem: {
+    border: "1px solid #e6eaf2",
+    borderRadius: 12,
+    padding: 12,
+    background: "#fff",
+  },
+
+  modalInfoLabel: {
+    fontSize: 11,
+    color: "#64748b",
+    fontWeight: 900,
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+  },
+
+  modalInfoValue: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: 900,
+    color: "#0f172a",
+  },
+
 };
