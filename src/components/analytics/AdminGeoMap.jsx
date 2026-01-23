@@ -426,19 +426,34 @@ export default function AdminGeoMap({
     return (
         <div
             style={{
+                // height: 520,
+                // borderRadius: 16,
+                // overflow: "hidden",
+                // border: "1px solid rgba(15,23,42,0.08)",
+                // position: "relative",
+                // background: "#0b1220",
                 height: 520,
                 borderRadius: 16,
                 overflow: "hidden",
                 border: "1px solid rgba(15,23,42,0.08)",
-                position: "relative",
-                background: "#0b1220",
+                position: "relative", // ✅ add this line
+                isolation: "isolate",     // ✅ new
+                contain: "layout paint",  // ✅ new
             }}
         >
-            {/* ✅ Color legend (like your second image) */}
+
             <MapLegend max={maxOpen} stops={legendStops} />
 
             <MapContainer
-                center={center}
+                // center={center}
+                // style={{ height: "100%", width: "100%" }}
+                // dragging={false}
+                // scrollWheelZoom={false}
+                // doubleClickZoom={false}
+                // touchZoom={false}
+                // boxZoom={false}
+                // keyboard={false}
+                // zoomControl={false}
                 style={{ height: "100%", width: "100%" }}
                 dragging={false}
                 scrollWheelZoom={false}
@@ -453,6 +468,7 @@ export default function AdminGeoMap({
                 <TileLayer
                     attribution='&copy; OpenStreetMap'
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+
                 />
 
                 {/* Heatmap overlay (same colors as legend) */}

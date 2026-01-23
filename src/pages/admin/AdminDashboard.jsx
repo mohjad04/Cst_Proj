@@ -1,6 +1,5 @@
 
 // src/pages/admin/AdminDashboard.jsx
-import React, { useEffect, useMemo, useState } from "react";
 import { getAdminDashboard } from "../../services/dashboardApi";
 import AdminGeoMap from "../../components/analytics/AdminGeoMap";
 import {
@@ -24,6 +23,13 @@ import {
   Legend,
   CartesianGrid,
 } from "recharts";
+import html2canvas from "html2canvas";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { getCohorts } from "../../services/analyticsApi";
+import { getOpenRequestsHeatmapFeed } from "../../services/geoFeedsApi";
+import AdminGeoFeedMap from "../../components/analytics/AdminGeoFeedMap";
+
+
 
 /* ----------------------------- helpers ----------------------------- */
 const clamp = (n, min = 0, max = 100) => Math.max(min, Math.min(max, n));
@@ -172,6 +178,108 @@ function EvidenceList({ items }) {
       })}
     </div>
   );
+}
+/* ----------------------------- export helpers ----------------------------- */
+function csvEscape(v) {
+  if (v === null || v === undefined) return "";
+  const s = String(v);
+  // Escape quotes and wrap if needed
+  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function toCSV(rows) {
+  const arr = Array.isArray(rows) ? rows : [];
+  if (!arr.length) return "No data\n";
+
+  // union keys
+  const cols = Array.from(
+    arr.reduce((set, r) => {
+      Object.keys(r || {}).forEach((k) => set.add(k));
+      return set;
+    }, new Set())
+  );
+
+  const header = cols.map(csvEscape).join(",");
+  const lines = arr.map((r) =>
+    cols.map((k) => csvEscape(r?.[k])).join(",")
+  );
+
+  return [header, ...lines].join("\n");
+}
+function downloadHtmlFile(filename, html) {
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function captureElementPng(el) {
+  if (!el) return "";
+  const canvas = await html2canvas(el, {
+    backgroundColor: "#ffffff",
+    scale: 2,
+    useCORS: true,
+    allowTaint: false,
+    imageTimeout: 15000,
+    logging: false,
+    removeContainer: true,
+  });
+  return canvas.toDataURL("image/png");
+}
+
+async function fetchAsDataUrl(url) {
+  if (!url) return "";
+  try {
+    const res = await fetch(url, { credentials: "include" }); // keep session
+    if (!res.ok) return ""; // protected / failed
+    const blob = await res.blob();
+    return await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = reject;
+      r.readAsDataURL(blob);
+    });
+  } catch {
+    return "";
+  }
+}
+
+
+function downloadTextFile(filename, content, mime = "text/csv;charset=utf-8") {
+  // add BOM so Excel opens UTF-8 correctly
+  const blob = new Blob(["\uFEFF", content], { type: mime });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  URL.revokeObjectURL(url);
+}
+
+// optional: export multi-sections in one file
+function downloadReportFile(filename, sections) {
+  // sections: [{ title, rows }]
+  const parts = [];
+  for (const s of sections) {
+    parts.push(`### ${s.title}\n`);
+    parts.push(toCSV(s.rows));
+    parts.push("\n\n");
+  }
+  downloadTextFile(filename, parts.join(""), "text/plain;charset=utf-8");
+}
+
+function safeJson(v) {
+  try { return JSON.stringify(v); } catch { return ""; }
 }
 
 function Modal({ open, title, subtitle, onClose, children }) {
@@ -382,6 +490,19 @@ export default function AdminDashboard() {
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [feedbackErr, setFeedbackErr] = useState("");
   const [selectedReq, setSelectedReq] = useState(null);
+  const mapWrapRef = useRef(null);
+  const [lastExportReq, setLastExportReq] = useState(null);
+
+  const [cohortsData, setCohortsData] = useState(null);
+  const [cohortsLoading, setCohortsLoading] = useState(false);
+  const [cohortsErr, setCohortsErr] = useState("");
+  const [cohortView, setCohortView] = useState("all"); // "all" | "repeated"
+
+  const [geoMapTab, setGeoMapTab] = useState("live"); // "live" | "feed"
+  const [geoFeed, setGeoFeed] = useState(null);
+  const [geoFeedLoading, setGeoFeedLoading] = useState(false);
+  const [geoFeedErr, setGeoFeedErr] = useState("");
+
 
 
 
@@ -400,6 +521,39 @@ export default function AdminDashboard() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== "analytics") return;
+    if (geoMapTab !== "feed") return;
+
+    let alive = true;
+
+    async function loadFeed() {
+      setGeoFeedLoading(true);
+      setGeoFeedErr("");
+      try {
+        const feed = await getOpenRequestsHeatmapFeed({ window_days: 30, grid_step: 0.002 });
+        if (!alive) return;
+        setGeoFeed(feed || null);
+      } catch (e) {
+        console.error(e);
+        if (!alive) return;
+        setGeoFeedErr("Failed to load geo feed.");
+      } finally {
+        if (alive) setGeoFeedLoading(false);
+      }
+    }
+
+    loadFeed();
+    const id = setInterval(loadFeed, 15000); // refresh every 15s
+
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [activeTab, geoMapTab]);
+
+
 
   useEffect(() => {
     if (activeTab !== "analytics") return;
@@ -425,12 +579,34 @@ export default function AdminDashboard() {
     loadGeo();
     const id = setInterval(loadGeo, 10000); // every 10 seconds
 
+
     return () => {
       alive = false;
       clearInterval(id);
     };
   }, [activeTab]);
+  useEffect(() => {
+    if (activeTab !== "analytics") return;
 
+    let alive = true;
+    (async () => {
+      setCohortsLoading(true);
+      setCohortsErr("");
+      try {
+        const res = await getCohorts(30, 20);
+        if (!alive) return;
+        setCohortsData(res);
+      } catch (e) {
+        console.error(e);
+        if (!alive) return;
+        setCohortsErr("Failed to load cohorts analytics.");
+      } finally {
+        if (alive) setCohortsLoading(false);
+      }
+    })();
+
+    return () => { alive = false; };
+  }, [activeTab]);
   useEffect(() => {
     if (activeTab !== "feedbacks") return;
 
@@ -462,6 +638,122 @@ export default function AdminDashboard() {
   }, [activeTab, feedbackTab]);
 
 
+  async function exportFullHtmlReport() {
+    if (!data) return;
+
+    // build rows from dashboard data
+    const statusRows = Object.entries(data?.status_breakdown || {}).map(([k, v]) => ({ k, v }));
+    const zonesRows = (data?.zones || []).map((z) => ({ zone: z.zone, count: z.count }));
+    const prioRows = (data?.priority_distribution || []).map((p) => ({ priority: p.priority, count: p.count }));
+    const trendRows = (data?.trend || []).map((t) => ({ date: t.date, count: t.count }));
+
+    const catRows = (data?.requests_by_category || []).map((c) => ({
+      category: c.category,
+      total: c.total,
+      subs: (c.subs || []).map((s) => `${s.name} (${s.count})`).join(", "),
+    }));
+
+    const teamsRows = (computed?.teamsList || []).map((t) => ({
+      name: t.name || t.team || t.team_name || "—",
+      requests: t.requests_count ?? t.requests ?? t.count ?? 0,
+    }));
+
+    function tableHtml(title, cols, rows) {
+      if (!rows || rows.length === 0) {
+        return `<div class="card"><h2>${title}</h2><div class="muted">No data</div></div>`;
+      }
+      return `
+      <div class="card">
+        <h2>${title}</h2>
+        <table>
+          <thead>
+            <tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>
+          </thead>
+          <tbody>
+            ${rows
+          .map(
+            (r) =>
+              `<tr>${cols
+                .map((c) => `<td>${r?.[c] ?? "—"}</td>`)
+                .join("")}</tr>`
+          )
+          .join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+    }
+
+    // NOTE: no map capture, no evidence, no selected request in report
+    const html = `
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <title>Dashboard Report</title>
+      <style>
+        body{font-family:Arial; padding:24px; color:#0f172a;}
+        .muted{color:#64748b; font-size:12px;}
+        .card{border:1px solid #e6eaf2; border-radius:14px; padding:14px; margin:12px 0; background:#fff;}
+        h1{margin:0 0 6px 0;}
+        h2{margin:0 0 10px 0; font-size:18px;}
+        .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px;}
+        .kpi{border:1px solid #eef2f7; border-radius:12px; padding:12px;}
+        .kpi .label{font-size:12px; color:#64748b; font-weight:800;}
+        .kpi .val{font-size:24px; font-weight:900; margin-top:6px;}
+        table{width:100%; border-collapse:collapse; font-size:13px;}
+        th,td{border-bottom:1px solid #eef2f7; padding:8px; text-align:left; vertical-align:top;}
+        th{font-size:12px; color:#334155; font-weight:900; background:#f8fafc;}
+        @media print { .no-print{display:none;} }
+      </style>
+    </head>
+    <body>
+      <div class="no-print">
+        <button onclick="window.print()">Print / Save as PDF</button>
+      </div>
+
+      <div class="card">
+        <h1>Admin Dashboard Report</h1>
+        <div class="muted">Generated: ${new Date().toLocaleString()}</div>
+      </div>
+
+      <div class="card">
+        <h2>Requests KPIs</h2>
+        <div class="grid">
+          <div class="kpi"><div class="label">Total Requests</div><div class="val">${fmtInt(computed.totalRequests)}</div></div>
+          <div class="kpi"><div class="label">Open Requests</div><div class="val">${fmtInt(computed.openRequests)}</div></div>
+          <div class="kpi"><div class="label">Closed Requests</div><div class="val">${fmtInt(computed.closedRequests)}</div></div>
+          <div class="kpi"><div class="label">Closed Rate</div><div class="val">${computed.closedRate}%</div></div>
+          <div class="kpi"><div class="label">Avg Response Time</div><div class="val">${computed.avgResponseHuman}</div></div>
+          <div class="kpi"><div class="label">SLA Compliance</div><div class="val">${computed.slaCompliance}%</div></div>
+        </div>
+      </div>
+
+      ${tableHtml("Trend (Last 7 days)", ["date", "count"], trendRows)}
+      ${tableHtml("Status Breakdown", ["k", "v"], statusRows)}
+      ${tableHtml("Zones Breakdown", ["zone", "count"], zonesRows)}
+      ${tableHtml("Priority Distribution", ["priority", "count"], prioRows)}
+      ${tableHtml("Requests by Category", ["category", "total", "subs"], catRows)}
+      ${tableHtml("Teams Workload", ["name", "requests"], teamsRows)}
+
+      <div class="card">
+        <h2>Users</h2>
+        <div class="grid">
+          <div class="kpi"><div class="label">Verified</div><div class="val">${fmtInt(computed.verifiedUsers)}</div></div>
+          <div class="kpi"><div class="label">Unverified</div><div class="val">${fmtInt(computed.unverifiedUsers)}</div></div>
+          <div class="kpi"><div class="label">Citizens</div><div class="val">${fmtInt(computed.citizensCount)}</div></div>
+          <div class="kpi"><div class="label">Staff</div><div class="val">${fmtInt(computed.staffCount)}</div></div>
+        </div>
+      </div>
+
+    </body>
+  </html>`;
+
+    const win = window.open("", "_blank");
+    if (!win) return;
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+  }
 
   const THEME = {
     accent: "#2563eb",
@@ -473,6 +765,17 @@ export default function AdminDashboard() {
   };
 
   const pieColors = [THEME.accent, THEME.good, THEME.warn, THEME.bad, "#7c3aed"];
+  const allCohorts = useMemo(
+    () => (Array.isArray(cohortsData?.cohorts) ? cohortsData.cohorts : []),
+    [cohortsData]
+  );
+
+  const repeatingCohorts = useMemo(
+    () => allCohorts.filter((c) => (c.total_requests || 0) >= 2),
+    [allCohorts]
+  );
+
+  const cohortsForChart = cohortView === "repeated" ? repeatingCohorts : allCohorts;
 
   const computed = useMemo(() => {
     const totals = data?.totals ?? {};
@@ -485,6 +788,7 @@ export default function AdminDashboard() {
     const openRequests = totals.open_requests ?? 0;
     const closedRequests = totals.closed_requests ?? 0;
     const closedRate = totals.closed_rate ?? 0;
+
 
     const avgResponseHuman = fmtHoursToHuman(
       isNum(totals.avg_response_time_minutes)
@@ -590,6 +894,8 @@ export default function AdminDashboard() {
   const CHART_H = 280;
   const BREAKDOWN_PANEL_H = 340; // keep same height for all breakdowns
 
+
+
   if (loading) {
     return (
       <div style={styles.page}>
@@ -627,7 +933,17 @@ export default function AdminDashboard() {
     <div style={styles.page}>
       <div style={styles.container}>
         {/* Tabs (tight, no huge top spacing) */}
-        <Tabs tabs={tabs} value={activeTab} onChange={setActiveTab} />
+        <div style={styles.tabsTopRow}>
+          <Tabs tabs={tabs} value={activeTab} onChange={setActiveTab} />
+
+
+          <button type="button" onClick={exportFullHtmlReport} style={styles.exportBtn}>
+            Export Report (PDF)
+          </button>
+
+        </div>
+
+
 
         {/* Fixed tab panel height => main tabs won't shrink/grow */}
         <div style={styles.tabPanel}>
@@ -1005,16 +1321,44 @@ export default function AdminDashboard() {
                   <div style={styles.emptyState}>Loading map data…</div>
                 ) : (
                   <>
-                    <Card
-                      title="Live Heat-map + Clustering"
-                      subtitle="Open requests only (new/triaged/assigned/in_progress)"
-                    >
-                      <AdminGeoMap
-                        requests={geoRequests}
-                        bbox={{ north: 31.995, south: 31.82, east: 35.315, west: 35.07 }}
-                        grid={{ rows: 3, cols: 4 }}
-                      />
-                    </Card>
+                    <MiniTabs
+                      tabs={[
+                        { id: "live", label: "Live Requests Map" },
+                        { id: "feed", label: "Geo Feed Map" },
+                      ]}
+                      value={geoMapTab}
+                      onChange={setGeoMapTab}
+                    />
+                    {geoMapTab === "live" ? (
+                      <Card
+                        title="Live Heat-map + Clustering"
+                        subtitle="Open requests only (new/triaged/assigned/in_progress)"
+                      >
+                        <div ref={mapWrapRef}>
+                          <AdminGeoMap
+                            requests={geoRequests}
+                            bbox={{ north: 31.995, south: 31.82, east: 35.315, west: 35.07 }}
+                            grid={{ rows: 3, cols: 4 }}
+                          />
+                        </div>
+                      </Card>
+                    ) : (
+                      <Card
+                        title="Geo Feed Heat-map"
+                        subtitle={geoFeed?.generated_at ? `Generated: ${fmtDateTime(geoFeed.generated_at)}` : "From geo_feeds"}
+                      >
+                        {geoFeedErr ? (
+                          <div style={styles.errorBox}>{geoFeedErr}</div>
+                        ) : geoFeedLoading && !geoFeed ? (
+                          <div style={styles.emptyState}>Loading geo feed…</div>
+                        ) : geoFeed?.geojson ? (
+                          <AdminGeoFeedMap geojson={geoFeed.geojson} />
+                        ) : (
+                          <div style={styles.emptyState}>No geo feed data.</div>
+                        )}
+                      </Card>
+                    )}
+
 
                     <div style={{ height: 12 }} />
 
@@ -1028,8 +1372,139 @@ export default function AdminDashboard() {
                   </>
                 )}
               </Section>
+
+              <Section
+                title="Repeat-Issue Cohorts"
+                subtitle="Most repeated zone+category+subcategory patterns (last 30 days)"
+                right={<span style={styles.smallPill}>Cohorts</span>}
+              >
+                {cohortsErr ? (
+                  <div style={styles.errorBox}>{cohortsErr}</div>
+                ) : cohortsLoading && !cohortsData ? (
+                  <div style={styles.emptyState}>Loading cohorts…</div>
+                ) : cohortsData ? (
+                  <>
+                    <div style={styles.gridAuto}>
+                      <StatCard label="Total Cohorts" value={fmtInt(cohortsData.summary.total_cohorts)} hint="Unique issue signatures" />
+                      <StatCard label="Repeated Cohorts" value={fmtInt(cohortsData.summary.repeated_cohorts)} hint=">= 2 occurrences" />
+                      <StatCard label="Repeat Rate" value={`${cohortsData.summary.repeat_rate}%`} hint="Repeated / total" />
+                      <StatCard label="Requests in Window" value={fmtInt(cohortsData.summary.total_requests_in_window)} hint="Last 30 days" />
+                    </div>
+
+                    <div style={{ height: 12 }} />
+                    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                      <button
+                        type="button"
+                        onClick={() => setCohortView("all")}
+                        style={{
+                          ...styles.miniTabBtn,
+                          ...(cohortView === "all" ? styles.miniTabBtnActive : null),
+                          border: "1px solid #e6eaf2",
+                          background: cohortView === "all" ? "#0f172a" : "#fff",
+                        }}
+                      >
+                        All Cohorts
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setCohortView("repeated")}
+                        style={{
+                          ...styles.miniTabBtn,
+                          ...(cohortView === "repeated" ? styles.miniTabBtnActive : null),
+                          border: "1px solid #e6eaf2",
+                          background: cohortView === "repeated" ? "#0f172a" : "#fff",
+                        }}
+                      >
+                        Repeated Only (≥2)
+                      </button>
+                    </div>
+
+                    <Card
+                      title={cohortView === "repeated" ? "Top Repeating Cohorts" : "All Cohorts"}
+                      subtitle={
+                        cohortView === "repeated"
+                          ? "Only cohorts with ≥2 occurrences"
+                          : "Includes single-occurrence cohorts too"
+                      }
+                    >
+                      {cohortsForChart.length ? (
+                        <>
+                          <ResponsiveContainer width="100%" height={280}>
+                            <BarChart
+                              data={cohortsForChart.map((c) => ({
+                                name: `${c.zone} • ${c.category}/${c.sub_category}`,
+                                total: c.total_requests,
+                              }))}
+                            >
+                              <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                              <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} />
+                              <YAxis />
+                              <Tooltip />
+                              <Bar dataKey="total" fill={THEME.accent} radius={[10, 10, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+
+                          <div style={{ marginTop: 8, fontSize: 12, color: "#64748b", fontWeight: 800 }}>
+                            Showing {cohortsForChart.length} cohorts
+                            {cohortView === "repeated" ? " (repeated only)" : " (all)"}
+                          </div>
+                        </>
+                      ) : (
+                        <div style={styles.emptyState}>No cohorts data.</div>
+                      )}
+                    </Card>
+
+
+                    <div style={{ height: 12 }} />
+
+                    <Card title="Cohorts Table" subtitle="Includes average gap between repeats (hours)">
+                      {cohortsForChart.length ? (
+                        <div style={{ display: "grid", gap: 8 }}>
+                          {cohortsForChart.map((c, idx) => (
+                            <div
+                              key={c.cohort_key || `${c.zone}|${c.category}|${c.sub_category}|${idx}`}
+                              style={{
+                                border: "1px solid #e6eaf2",
+                                borderRadius: 12,
+                                padding: 12,
+                                background: "#fff",
+                                display: "flex",
+                                justifyContent: "space-between",
+                                gap: 10,
+                              }}
+                            >
+                              <div style={{ fontWeight: 950 }}>
+                                {c.zone} • {c.category}/{c.sub_category}
+                                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 800, marginTop: 4 }}>
+                                  First: {fmtDateTime(c.first_seen)} • Last: {fmtDateTime(c.last_seen)}
+                                </div>
+                              </div>
+
+                              <div style={{ textAlign: "right", fontWeight: 950 }}>
+                                {c.total_requests}x
+                                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 800, marginTop: 4 }}>
+                                  Avg gap: {isNum(c.avg_gap_hours) ? `${Math.round(c.avg_gap_hours)}h` : "—"}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={styles.emptyState}>No cohorts data.</div>
+                      )}
+                    </Card>
+
+                  </>
+                ) : (
+                  <div style={styles.emptyState}>No cohorts data.</div>
+                )}
+              </Section>
+
             </div>
           )}
+
+
 
           {activeTab === "feedbacks" && (
             <div style={styles.tabInner}>
@@ -1097,6 +1572,7 @@ export default function AdminDashboard() {
                                   try {
                                     const full = await getRequestFeedbackDetails(rid); // ✅ includes citizen_feedback
                                     setSelectedReq(full);
+                                    setLastExportReq(full);
                                   } catch (e) {
                                     console.error(e);
                                     setSelectedReq(null);
@@ -1144,7 +1620,6 @@ export default function AdminDashboard() {
                       : splitEvidence(r.evidence).citizen;
 
                     const fb = r.citizen_feedback || extractCitizenFeedback(r);
-
 
                     return (
                       <div style={{ display: "grid", gap: 14 }}>
@@ -1208,12 +1683,12 @@ export default function AdminDashboard() {
             </div>
           )}
 
-
         </div>
       </div>
     </div>
   );
 }
+
 
 /* --------------------------------- styles -------------------------------- */
 const styles = {
@@ -1707,6 +2182,26 @@ const styles = {
     fontSize: 13,
     fontWeight: 900,
     color: "#0f172a",
+  },
+  tabsTopRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+
+  exportBtn: {
+    appearance: "none",
+    border: "1px solid #0f172a",
+    background: "#0f172a",
+    color: "#ffffff",
+    borderRadius: 12,
+    padding: "10px 14px",
+    fontSize: 13,
+    fontWeight: 950,
+    cursor: "pointer",
+    boxShadow: "0 10px 24px rgba(2,6,23,0.18)",
+    whiteSpace: "nowrap",
   },
 
 };

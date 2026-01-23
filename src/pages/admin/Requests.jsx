@@ -48,6 +48,23 @@ function Icon({ name, style }) {
         );
     return null;
 }
+const PAGE_SIZES = [10, 20, 50, 100];
+
+function priorityRank(v) {
+    // supports P1..P9 or numbers
+    const s = String(v || "").toUpperCase().trim();
+    const m = s.match(/^P(\d+)$/);
+    if (m) return Number(m[1]);
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 999;
+}
+
+function getCreatedMs(r) {
+    const v = r?.timestamps?.created_at || r?.created_at || 0;
+    const t = new Date(v).getTime();
+    return Number.isFinite(t) ? t : 0;
+}
+
 
 function fmtDate(v) {
     if (!v) return "—";
@@ -170,10 +187,56 @@ export default function Requests() {
         request: null,
     });
     const [showSlaRules, setShowSlaRules] = useState(false);
-    const [priorityFilter, setPriorityFilter] = useState("all"); // all | P1..P5
-    const [zoneFilter, setZoneFilter] = useState("all");         // all | ZONE-R1-C1...
-    const [dateFrom, setDateFrom] = useState("");                // "YYYY-MM-DD"
-    const [dateTo, setDateTo] = useState("");                    // "YYYY-MM-DD"
+    const [priorityFilter, setPriorityFilter] = useState("all");
+    const [zoneFilter, setZoneFilter] = useState("all");
+    const [dateFrom, setDateFrom] = useState("");
+    const [dateTo, setDateTo] = useState("");
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(20);
+
+    // sorting
+    const [sortKey, setSortKey] = useState("created_at"); // created_at | status | priority | zone | category
+    const [sortDir, setSortDir] = useState("desc"); // asc | desc
+    const [showMore, setShowMore] = useState(false);
+
+    const filtered = useMemo(() => {
+        const query = q.trim().toLowerCase();
+        const fromMs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
+        const toMs = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null;
+
+        return rows.filter((r) => {
+            const s = String(r.status || "").toLowerCase();
+            if (statusFilter !== "all" && s !== statusFilter) return false;
+
+            const p = r?.priority ? String(r.priority) : "";
+            if (priorityFilter !== "all" && p !== priorityFilter) return false;
+
+            const z = String(r.zone_name || r.location?.zone_name || "");
+            if (zoneFilter !== "all" && z !== zoneFilter) return false;
+
+            const created = r.timestamps?.created_at || r.created_at;
+            const createdMs = created ? new Date(created).getTime() : NaN;
+            if (fromMs != null && Number.isFinite(createdMs) && createdMs < fromMs) return false;
+            if (toMs != null && Number.isFinite(createdMs) && createdMs > toMs) return false;
+            if ((fromMs != null || toMs != null) && !Number.isFinite(createdMs)) return false;
+
+            if (!query) return true;
+            const hay = [
+                r.request_id,
+                r.category,
+                r.sub_category,
+                r.priority,
+                r.zone_name || r.location?.zone_name,
+                r.address_hint,
+            ]
+                .filter(Boolean)
+                .join(" ")
+                .toLowerCase();
+
+            return hay.includes(query);
+        });
+    }, [rows, q, statusFilter, priorityFilter, zoneFilter, dateFrom, dateTo]);
+
 
 
     async function reload() {
@@ -217,6 +280,51 @@ export default function Requests() {
             alive = false;
         };
     }, []);
+    // reset page when filters/sort/pageSize change
+    useEffect(() => {
+        setPage(1);
+    }, [q, statusFilter, priorityFilter, zoneFilter, dateFrom, dateTo, sortKey, sortDir, pageSize]);
+
+    const sorted = useMemo(() => {
+        const dir = sortDir === "asc" ? 1 : -1;
+
+        const arr = [...filtered];
+        arr.sort((a, b) => {
+            if (sortKey === "created_at") return (getCreatedMs(a) - getCreatedMs(b)) * dir;
+
+            if (sortKey === "status") {
+                const av = String(a.status || "").toLowerCase();
+                const bv = String(b.status || "").toLowerCase();
+                return av.localeCompare(bv) * dir;
+            }
+
+            if (sortKey === "priority") {
+                return (priorityRank(a.priority) - priorityRank(b.priority)) * dir;
+            }
+
+            if (sortKey === "zone") {
+                const av = String(a.zone_name || a.location?.zone_name || "").toLowerCase();
+                const bv = String(b.zone_name || b.location?.zone_name || "").toLowerCase();
+                return av.localeCompare(bv) * dir;
+            }
+
+            // category
+            const av = String(a.category || "").toLowerCase();
+            const bv = String(b.category || "").toLowerCase();
+            return av.localeCompare(bv) * dir;
+        });
+
+        return arr;
+    }, [filtered, sortKey, sortDir]);
+
+    const total = sorted.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const safePage = Math.min(Math.max(page, 1), totalPages);
+
+    const paged = useMemo(() => {
+        const start = (safePage - 1) * pageSize;
+        return sorted.slice(start, start + pageSize);
+    }, [sorted, safePage, pageSize]);
 
     const stats = useMemo(() => {
         const total = rows.length;
@@ -240,55 +348,6 @@ export default function Requests() {
     }, [rows]);
 
 
-    const filtered = useMemo(() => {
-        const query = q.trim().toLowerCase();
-
-        // convert dateFrom/dateTo to real boundaries (local time)
-        const fromMs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
-        const toMs = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null;
-
-        return rows
-            .filter((r) => {
-                const s = String(r.status || "").toLowerCase();
-                if (statusFilter !== "all" && s !== statusFilter) return false;
-
-                // ✅ priority
-                const p = r?.priority ? String(r.priority) : "";
-                if (priorityFilter !== "all" && p !== priorityFilter) return false;
-
-                // ✅ zone
-                const z = String(r.zone_name || r.location?.zone_name || "");
-                if (zoneFilter !== "all" && z !== zoneFilter) return false;
-
-                // ✅ dates
-                const created = r.timestamps?.created_at || r.created_at;
-                const createdMs = created ? new Date(created).getTime() : NaN;
-                if (fromMs != null && Number.isFinite(createdMs) && createdMs < fromMs) return false;
-                if (toMs != null && Number.isFinite(createdMs) && createdMs > toMs) return false;
-                if ((fromMs != null || toMs != null) && !Number.isFinite(createdMs)) return false;
-
-                // ✅ search
-                if (!query) return true;
-                const hay = [
-                    r.request_id,
-                    r.category,
-                    r.sub_category,
-                    r.priority,
-                    r.zone_name || r.location?.zone_name,
-                    r.address_hint,
-                ]
-                    .filter(Boolean)
-                    .join(" ")
-                    .toLowerCase();
-
-                return hay.includes(query);
-            })
-            .sort((a, b) => {
-                const aT = new Date(a.timestamps?.created_at || a.created_at || 0).getTime();
-                const bT = new Date(b.timestamps?.created_at || b.created_at || 0).getTime();
-                return bT - aT;
-            });
-    }, [rows, q, statusFilter, priorityFilter, zoneFilter, dateFrom, dateTo]);
 
     const priorityOptions = useMemo(() => {
         const set = new Set();
@@ -343,7 +402,8 @@ export default function Requests() {
         <div style={styles.page}>
             {/* toolbar */}
             <div style={styles.toolbar}>
-                <div style={styles.toolbarLeft}>
+                {/* Row 1: stats left, actions right */}
+                <div style={styles.toolbarTop}>
                     <div style={styles.chipsRow}>
                         <span style={styles.chip}>{stats.total} total</span>
                         <span style={{ ...styles.chip, ...styles.chipRed }}>{stats.new} new</span>
@@ -354,97 +414,143 @@ export default function Requests() {
                         <span style={{ ...styles.chip, ...styles.chipSlate }}>{stats.closed} closed</span>
                     </div>
 
-
-                    <div style={styles.searchRow}>
-                        <div style={styles.searchWrap}>
-                            <span style={styles.searchIcon}>
-                                <Icon name="search" />
+                    <div style={styles.actionsRow}>
+                        <Button variant="neutral" onClick={reload}>
+                            <span style={styles.btnIcon}>
+                                <Icon name="refresh" />
                             </span>
+                            Refresh
+                        </Button>
+
+                        <Button variant="primary" onClick={() => setShowSlaRules(true)}>
+                            <span style={styles.btnIcon}>
+                                <Icon name="gear" />
+                            </span>
+                            Manage SLA Rules
+                        </Button>
+                    </div>
+                </div>
+
+                {/* Row 2: search + primary filters */}
+                <div style={styles.filtersRowGrid}>
+                    <div style={styles.searchWrap}>
+                        <span style={styles.searchIcon}>
+                            <Icon name="search" />
+                        </span>
+                        <input
+                            style={styles.searchInput}
+                            placeholder="Search by request id, category, zone, priority…"
+                            value={q}
+                            onChange={(e) => setQ(e.target.value)}
+                        />
+                    </div>
+
+                    <select style={styles.selectSm} value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
+                        {priorityOptions.map((p) => (
+                            <option key={p} value={p}>
+                                {p === "all" ? "All priorities" : p}
+                            </option>
+                        ))}
+                    </select>
+
+                    <select style={styles.selectSm} value={zoneFilter} onChange={(e) => setZoneFilter(e.target.value)}>
+                        {zoneOptions.map((z) => (
+                            <option key={z} value={z}>
+                                {z === "all" ? "All zones" : z}
+                            </option>
+                        ))}
+                    </select>
+
+                    <Button
+                        variant="soft"
+                        onClick={() => setShowMore((v) => !v)}
+                        style={{ height: 44, justifyContent: "center" }}
+                    >
+                        {showMore ? "Less filters ▲" : "More filters ▼"}
+                    </Button>
+
+                    {hasAnyExtraFilter && (
+                        <Button
+                            variant="neutral"
+                            onClick={() => {
+                                setQ("");
+                                setStatusFilter("all");
+                                setPriorityFilter("all");
+                                setZoneFilter("all");
+                                setDateFrom("");
+                                setDateTo("");
+                            }}
+                            style={{ height: 44, justifyContent: "center" }}
+                        >
+                            Clear
+                        </Button>
+                    )}
+                </div>
+
+                {/* Row 3 (collapsible): dates + sorting + page size */}
+                {showMore && (
+                    <div style={styles.moreRow}>
+                        <div style={styles.dateGroup}>
                             <input
-                                style={styles.searchInput}
-                                placeholder="Search by request id, category, zone, priority…"
-                                value={q}
-                                onChange={(e) => setQ(e.target.value)}
+                                type="date"
+                                style={styles.dateInputSm}
+                                value={dateFrom}
+                                onChange={(e) => setDateFrom(e.target.value)}
+                            />
+                            <span style={styles.dateDashSm}>—</span>
+                            <input
+                                type="date"
+                                style={styles.dateInputSm}
+                                value={dateTo}
+                                onChange={(e) => setDateTo(e.target.value)}
                             />
                         </div>
 
-                        <select
-                            style={styles.selectSm}
-                            value={priorityFilter}
-                            onChange={(e) => setPriorityFilter(e.target.value)}
-                        >
-                            {priorityOptions.map((p) => (
-                                <option key={p} value={p}>
-                                    {p === "all" ? "All priorities" : p}
-                                </option>
-                            ))}
-                        </select>
+                        <div style={styles.sortGroup}>
+                            <select style={styles.selectSm} value={sortKey} onChange={(e) => setSortKey(e.target.value)}>
+                                <option value="created_at">Sort: Created</option>
+                                <option value="status">Sort: Status</option>
+                                <option value="priority">Sort: Priority</option>
+                                <option value="zone">Sort: Zone</option>
+                                <option value="category">Sort: Category</option>
+                            </select>
 
-                        <select
-                            style={styles.selectSm}
-                            value={zoneFilter}
-                            onChange={(e) => setZoneFilter(e.target.value)}
-                        >
-                            {zoneOptions.map((z) => (
-                                <option key={z} value={z}>
-                                    {z === "all" ? "All zones" : z}
-                                </option>
-                            ))}
-                        </select>
+                            <Button
+                                variant="neutral"
+                                onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+                                style={{ height: 44, minWidth: 96, justifyContent: "center" }}
+                            >
+                                {sortDir === "asc" ? "Asc ↑" : "Desc ↓"}
+                            </Button>
 
-                        <input
-                            type="date"
-                            style={styles.dateInputSm}
-                            value={dateFrom}
-                            onChange={(e) => setDateFrom(e.target.value)}
-                        />
-
-                        <span style={styles.dateDashSm}>—</span>
-
-                        <input
-                            type="date"
-                            style={styles.dateInputSm}
-                            value={dateTo}
-                            onChange={(e) => setDateTo(e.target.value)}
-                        />
-
-
+                            <select style={styles.selectSm} value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+                                {PAGE_SIZES.map((n) => (
+                                    <option key={n} value={n}>
+                                        {n} / page
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
+                )}
 
-
-
-                    <div style={styles.pillsRow}>
-                        <Pill active={statusFilter === "all"} onClick={() => setStatusFilter("all")}>All</Pill>
-                        <Pill active={statusFilter === "new"} onClick={() => setStatusFilter("new")}>New</Pill>
-                        <Pill active={statusFilter === "triaged"} onClick={() => setStatusFilter("triaged")}>Triaged</Pill>
-                        <Pill active={statusFilter === "assigned"} onClick={() => setStatusFilter("assigned")}>Assigned</Pill>
-                        <Pill active={statusFilter === "in_progress"} onClick={() => setStatusFilter("in_progress")}>In Progress</Pill>
-                        <Pill active={statusFilter === "resolved"} onClick={() => setStatusFilter("resolved")}>Resolved</Pill>
-                        <Pill active={statusFilter === "closed"} onClick={() => setStatusFilter("closed")}>Closed</Pill>
-                    </div>
-
-                </div>
-
-                <div style={styles.toolbarRight}>
-                    <Button variant="neutral" onClick={reload}>
-                        <span style={styles.btnIcon}>
-                            <Icon name="refresh" />
-                        </span>
-                        Refresh
-                    </Button>
-
-                    <Button variant="primary" onClick={() => setShowSlaRules(true)}>
-                        <span style={styles.btnIcon}>
-                            <Icon name="gear" />
-                        </span>
-                        Manage SLA Rules
-                    </Button>
-                </div>
             </div>
+            {/* Row 4: status pills */}
+            <div style={styles.pillsRow}>
+                <Pill active={statusFilter === "all"} onClick={() => setStatusFilter("all")}>All</Pill>
+                <Pill active={statusFilter === "new"} onClick={() => setStatusFilter("new")}>New</Pill>
+                <Pill active={statusFilter === "triaged"} onClick={() => setStatusFilter("triaged")}>Triaged</Pill>
+                <Pill active={statusFilter === "assigned"} onClick={() => setStatusFilter("assigned")}>Assigned</Pill>
+                <Pill active={statusFilter === "in_progress"} onClick={() => setStatusFilter("in_progress")}>In Progress</Pill>
+                <Pill active={statusFilter === "resolved"} onClick={() => setStatusFilter("resolved")}>Resolved</Pill>
+                <Pill active={statusFilter === "closed"} onClick={() => setStatusFilter("closed")}>Closed</Pill>
+            </div>
+
+
 
             {/* list */}
             <div style={styles.list}>
-                {filtered.map((r) => {
+                {paged.map((r) => {
                     const meta = statusMeta(r.status);
                     const created = r.timestamps?.created_at || r.created_at;
 
@@ -488,13 +594,63 @@ export default function Requests() {
                     );
                 })}
 
-                {filtered.length === 0 && (
+                {total === 0 && (
                     <div style={styles.emptyBox}>
                         <div style={styles.emptyTitle}>No requests found</div>
                         <div style={styles.emptyText}>Try changing the search or filters.</div>
                     </div>
                 )}
+
             </div>
+
+            {total > 0 && (
+                <div style={styles.paginationBar}>
+                    <div style={styles.paginationInfo}>
+                        Showing {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, total)} of {total}
+                    </div>
+
+                    <div style={styles.paginationBtns}>
+                        <button
+                            type="button"
+                            style={styles.pageBtn}
+                            onClick={() => setPage(1)}
+                            disabled={safePage === 1}
+                        >
+                            « First
+                        </button>
+                        <button
+                            type="button"
+                            style={styles.pageBtn}
+                            onClick={() => setPage((p) => Math.max(1, p - 1))}
+                            disabled={safePage === 1}
+                        >
+                            ‹ Prev
+                        </button>
+
+                        <div style={styles.pageNumber}>
+                            Page {safePage} / {totalPages}
+                        </div>
+
+                        <button
+                            type="button"
+                            style={styles.pageBtn}
+                            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                            disabled={safePage === totalPages}
+                        >
+                            Next ›
+                        </button>
+                        <button
+                            type="button"
+                            style={styles.pageBtn}
+                            onClick={() => setPage(totalPages)}
+                            disabled={safePage === totalPages}
+                        >
+                            Last »
+                        </button>
+                    </div>
+                </div>
+            )}
+
 
             {/* modals */}
             {openRequest && (
@@ -622,8 +778,13 @@ const styles = {
     toolbarLeft: { display: "grid", gap: 10, flex: "1 1 520px", minWidth: 320 },
     toolbarRight: { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" },
 
-    chipsRow: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" },
-    chip: {
+    chipsRow: {
+        display: "flex",
+        gap: 8,
+        alignItems: "center",
+        flexWrap: "wrap",
+        flex: "1 1 auto",       // ✅ takes the left space
+    }, chip: {
         display: "inline-flex",
         alignItems: "center",
         padding: "6px 10px",
@@ -645,20 +806,26 @@ const styles = {
         alignItems: "center",
         background: "#ffffff",
         border: "1px solid rgba(15,23,42,0.10)",
-        borderRadius: 14,
-        height: 44,
+        borderRadius: 16,          // ✅ slightly rounder
+        height: 44,                // ✅ taller (was 44)
         boxShadow: "0 10px 18px rgba(2,6,23,0.04)",
         flex: "1 1 420px",
+        width: 600,                // ✅ taller (was 44)
+
     },
-    searchIcon: { position: "absolute", left: 12, color: "#64748b", display: "grid", placeItems: "center" },
-    searchInput: {
+    searchIcon: {
+        position: "absolute",
+        left: 14,                  // ✅ adjust for taller input
+        color: "#64748b",
+        display: "grid",
+        placeItems: "center",
+    }, searchInput: {
         width: "100%",
         height: "100%",
         border: "none",
         outline: "none",
         background: "transparent",
-        padding: "0 12px 0 38px",
-        fontSize: 14,
+        padding: "0 14px 0 44px",  // ✅ more padding
         color: "#0f172a",
         fontWeight: 850,
     },
@@ -828,7 +995,7 @@ const styles = {
         fontWeight: 850,
         color: "#0f172a",
         cursor: "pointer",
-        minWidth: 170,
+        minWidth: 150, // ✅ was 170
     },
 
     dateInputSm: {
@@ -858,6 +1025,104 @@ const styles = {
         color: "#0f172a",
         whiteSpace: "nowrap",
     },
+
+    paginationBar: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 10,
+        flexWrap: "wrap",
+        padding: "10px 12px",
+        borderRadius: 16,
+        border: "1px solid rgba(15,23,42,0.08)",
+        background: "rgba(255,255,255,0.92)",
+        boxShadow: "0 12px 26px rgba(2,6,23,0.06)",
+    },
+
+    paginationInfo: {
+        fontSize: 13,
+        fontWeight: 850,
+        color: "#334155",
+    },
+
+    paginationBtns: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        flexWrap: "wrap",
+    },
+
+    pageBtn: {
+        height: 38,
+        padding: "0 10px",
+        borderRadius: 12,
+        border: "1px solid rgba(15,23,42,0.10)",
+        background: "#fff",
+        fontWeight: 900,
+        cursor: "pointer",
+    },
+
+    pageNumber: {
+        padding: "0 10px",
+        height: 38,
+        display: "grid",
+        placeItems: "center",
+        borderRadius: 12,
+        border: "1px solid rgba(15,23,42,0.06)",
+        background: "rgba(15,23,42,0.04)",
+        fontWeight: 950,
+        color: "#0f172a",
+    },
+
+    toolbarTop: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 12,
+        flexWrap: "wrap",
+        width: "100%",          // ✅ force full row
+    },
+
+    actionsRow: {
+        display: "flex",
+        gap: 10,
+        alignItems: "center",
+        flexWrap: "wrap",
+        marginLeft: "auto",     // ✅ pushes actions to the far right
+    },
+
+    filtersRowGrid: {
+        display: "grid",
+        gridTemplateColumns: "1fr 170px 170px auto auto",
+        gap: 10,
+        alignItems: "center",
+    },
+
+    moreRow: {
+        display: "flex",
+        gap: 10,
+        alignItems: "center",
+        flexWrap: "wrap",
+    },
+
+    dateGroup: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        flexWrap: "wrap",
+    },
+
+    sortGroup: {
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        flexWrap: "wrap",
+    },
+
+
+
+    // responsive: when screen is narrow, stack filters nicely
+    "@media (max-width: 980px)": {},
 
 
 };

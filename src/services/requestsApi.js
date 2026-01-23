@@ -65,3 +65,7 @@ export function listFeedbackRequests(status = "closed", limit = 200) {
 export function getRequestFeedbackDetails(requestId) {
   return request(`/admin/requests/${requestId}/feedback-details`);
 }
+export function getSlaMonitoring(requestId) {
+  return request(`/admin/requests/${requestId}/sla-monitoring`);
+}
+

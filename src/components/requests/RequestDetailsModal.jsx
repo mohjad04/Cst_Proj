@@ -1,185 +1,130 @@
-// import Modal, { btnPrimary, btnSecondary } from "../ui/Modal";
-
-// export default function RequestDetailsModal({ request, onClose, onAddSla }) {
-//     const t = request.timestamps || {};
-//     const loc = request.location || {};
-//     const citizenRef = request.citizen_ref || {};
-//     const citizen = request.citizen || {};
-//     const zoneName = request.zone_name;
-//     const addressHint = request.address_hint;
-
-
-
-
-//     return (
-//         <Modal onClose={onClose}>
-//             <h2 style={{ marginTop: 0 }}>{request.request_id}</h2>
-
-//             {/* Description */}
-//             <Section title="Description">
-//                 <p>{request.description || "—"}</p>
-//             </Section>
-
-//             {/* Classification */}
-//             <Section title="Classification">
-//                 <Row label="Category" value={request.category} />
-//                 <Row label="Subcategory" value={request.sub_category} />
-//                 <Row label="Priority" value={request.priority} />
-//                 <Row label="Status" value={request.status} />
-//             </Section>
-
-//             <Section title="Citizen">
-//                 <Row label="Anonymous" value={citizenRef.anonymous ? "Yes" : "No"} />
-//                 <Row label="Contact Channel" value={citizenRef.contact_channel} />
-
-//                 {!citizenRef.anonymous && (
-//                     <>
-//                         <Row label="Name" value={citizen.full_name} />
-//                         <Row label="Phone" value={citizen.phone} />
-//                         <Row label="Email" value={citizen.email} />
-//                     </>
-//                 )}
-//             </Section>
-
-
-//             <Section title="Location">
-//                 <Row label="Zone" value={zoneName} />
-//                 <Row label="Address" value={addressHint} />
-
-//                 {Array.isArray(loc.coordinates) && (
-//                     <Row
-//                         label="Coordinates"
-//                         value={`${loc.coordinates[0]}, ${loc.coordinates[1]}`}
-//                     />
-//                 )}
-//             </Section>
-
-
-//             {/* Tags */}
-//             <Section title="Tags">
-//                 {Array.isArray(request.tags) && request.tags.length > 0 ? (
-//                     <div style={tagWrap}>
-//                         {request.tags.map((t, i) => (
-//                             <span key={i} style={tag}>{t}</span>
-//                         ))}
-//                     </div>
-//                 ) : (
-//                     <p>—</p>
-//                 )}
-//             </Section>
-
-//             {/* Evidence */}
-//             <Section title="Evidence">
-//                 {Array.isArray(request.evidence) && request.evidence.length > 0 ? (
-//                     request.evidence.map((e, i) => (
-//                         <div key={i} style={{ marginBottom: 10 }}>
-//                             <Row label="Type" value={e.type} />
-//                             <Row label="Uploaded By" value={e.uploaded_by} />
-//                             <Row
-//                                 label="Uploaded At"
-//                                 value={new Date(e.uploaded_at).toLocaleString()}
-//                             />
-//                             {e.type === "photo" && e.url && (
-//                                 <img
-//                                     src={e.url}
-//                                     alt="Evidence"
-//                                     style={{
-//                                         marginTop: 8,
-//                                         maxWidth: "100%",
-//                                         borderRadius: 8,
-//                                         border: "1px solid #e5e7eb",
-//                                     }}
-//                                 />
-//                             )}
-//                         </div>
-//                     ))
-//                 ) : (
-//                     <p>—</p>
-//                 )}
-//             </Section>
-
-//             {/* Timestamps */}
-//             <Section title="Timeline">
-//                 <Row label="Created" value={formatTime(t.created_at)} />
-//                 <Row label="Triaged" value={formatTime(t.triaged_at)} />
-//                 <Row label="Assigned" value={formatTime(t.assigned_at)} />
-//                 <Row label="Resolved" value={formatTime(t.resolved_at)} />
-//                 <Row label="Closed" value={formatTime(t.closed_at)} />
-//                 <Row label="Updated" value={formatTime(t.updated_at)} />
-//             </Section>
-
-//             {/* Actions */}
-//             <div style={actions}>
-//                 <button onClick={onClose} style={btnSecondary}>Close</button>
-//                 <button onClick={onAddSla} style={btnPrimary}>
-//                     {request.status === "triaged" ? "View SLA" : "Add SLA"}
-//                 </button>
-//             </div>
-//         </Modal>
-//     );
-// }
-
-// /* ---------- helpers ---------- */
-
-// function formatTime(v) {
-//     if (!v) return "—";
-//     return new Date(v).toLocaleString();
-// }
-
-// function Section({ title, children }) {
-//     return (
-//         <div style={{ marginTop: 18 }}>
-//             <h4 style={{ margin: "0 0 6px 0" }}>{title}</h4>
-//             <div style={{ fontSize: 14 }}>{children}</div>
-//         </div>
-//     );
-// }
-
-// function Row({ label, value }) {
-//     return (
-//         <div style={row}>
-//             <span style={rowLabel}>{label}</span>
-//             <span>{value || "—"}</span>
-//         </div>
-//     );
-// }
-
-// /* ---------- styles ---------- */
-
-// const row = {
-//     display: "flex",
-//     gap: 10,
-//     marginBottom: 4,
-// };
-
-// const rowLabel = {
-//     width: 120,
-//     color: "#6b7280",
-// };
-
-// const tagWrap = {
-//     display: "flex",
-//     gap: 6,
-//     flexWrap: "wrap",
-// };
-
-// const tag = {
-//     background: "#f3f4f6",
-//     padding: "4px 8px",
-//     borderRadius: 999,
-//     fontSize: 12,
-// };
-
-// const actions = {
-//     marginTop: 24,
-//     display: "flex",
-//     justifyContent: "flex-end",
-//     gap: 10,
-// };
 
 // src/components/requests/RequestDetailsModal.jsx
-import React, { useMemo } from "react";
 import Modal, { btnPrimary, btnSecondary } from "../ui/Modal";
+import React, { useEffect, useMemo, useState } from "react";
+import { getSlaMonitoring } from "../../services/requestsApi";
+
+const toLower = (v) => String(v || "").toLowerCase();
+
+function fmtDateTime(v) {
+    if (!v) return "—";
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleString();
+}
+
+/**
+ * Supports BOTH shapes:
+ * 1) evidence: [{ uploaded_by: "citizen"|"employee", url, ... }]
+ * 2) evidence: { citizen: [...], employee: [...] }
+ */
+function splitEvidence(evidence) {
+    if (!evidence) return { citizen: [], employee: [] };
+
+    if (!Array.isArray(evidence) && typeof evidence === "object") {
+        return {
+            citizen: Array.isArray(evidence.citizen) ? evidence.citizen : [],
+            employee: Array.isArray(evidence.employee) ? evidence.employee : [],
+        };
+    }
+
+    const arr = Array.isArray(evidence) ? evidence : [];
+    const citizen = arr.filter((x) => toLower(x.uploaded_by) === "citizen");
+    const employee = arr.filter((x) => {
+        const u = toLower(x.uploaded_by);
+        return u === "employee" || u === "staff" || u === "admin" || u === "municipality";
+    });
+
+    return { citizen, employee };
+}
+
+function EvidenceList({ items }) {
+    const rows = Array.isArray(items) ? items : [];
+    if (!rows.length) return <div style={styles.muted}>—</div>;
+
+    return (
+        <div style={{ display: "grid", gap: 10 }}>
+            {rows.map((ev, idx) => {
+                // ✅ SAME AS FEEDBACKS (no url prefixing, no backend manipulation)
+                const url = ev.url;
+                const at = ev.uploaded_at || ev.at || ev.created_at;
+                const note = ev.note || ev.caption || "";
+
+                const isImg = ev.type === "photo"; // ✅ no need to check extension
+
+                return (
+                    <div
+                        key={url || idx}
+                        style={{
+                            display: "grid",
+                            gridTemplateColumns: "88px 1fr",
+                            gap: 10,
+                            border: "1px solid rgba(15,23,42,0.08)",
+                            borderRadius: 12,
+                            padding: 10,
+                            background: "#fff",
+                        }}
+                    >
+                        <a
+                            href={url || "#"}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                                width: 88,
+                                height: 66,
+                                borderRadius: 10,
+                                overflow: "hidden",
+                                border: "1px solid rgba(15,23,42,0.08)",
+                                background: "#f8fafc",
+                                display: "grid",
+                                placeItems: "center",
+                                textDecoration: "none",
+                            }}
+                        >
+                            {isImg && url ? (
+                                <img
+                                    src={url}
+                                    alt="evidence"
+                                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                                />
+                            ) : (
+                                <span style={{ fontWeight: 900, color: "#64748b", fontSize: 12 }}>FILE</span>
+                            )}
+                        </a>
+
+                        <div style={{ display: "grid", gap: 6 }}>
+                            <div style={{ fontWeight: 950, color: "#0f172a" }}>
+                                {ev.type || "evidence"}
+                            </div>
+
+                            <div style={{ fontSize: 12, color: "#64748b", fontWeight: 800 }}>
+                                {fmtDateTime(at)}
+                            </div>
+
+                            {note ? (
+                                <div style={{ fontSize: 12, color: "#334155", fontWeight: 800 }}>
+                                    {note}
+                                </div>
+                            ) : null}
+
+                            {url ? (
+                                <a
+                                    href={url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{ fontSize: 12, fontWeight: 900, color: "#2563eb" }}
+                                >
+                                    Open file
+                                </a>
+                            ) : null}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
 
 export default function RequestDetailsModal({ request, onClose, onAddSla }) {
     const t = request?.timestamps || {};
@@ -188,6 +133,33 @@ export default function RequestDetailsModal({ request, onClose, onAddSla }) {
     const citizen = request?.citizen || {};
     const zoneName = request?.zone_name;
     const addressHint = request?.address_hint;
+    const [slaMon, setSlaMon] = useState(null);
+    const [slaMonLoading, setSlaMonLoading] = useState(false);
+
+    useEffect(() => {
+        let alive = true;
+
+        (async () => {
+            const rid = request?.request_id;
+            if (!rid) return;
+
+            setSlaMonLoading(true);
+            try {
+                const data = await getSlaMonitoring(rid);
+                if (!alive) return;
+                setSlaMon(data?.monitoring || null);
+            } catch (e) {
+                if (!alive) return;
+                setSlaMon(null);
+            } finally {
+                if (alive) setSlaMonLoading(false);
+            }
+        })();
+
+        return () => {
+            alive = false;
+        };
+    }, [request?.request_id]);
 
     const status = String(request?.status || "").toLowerCase();
 
@@ -316,37 +288,31 @@ export default function RequestDetailsModal({ request, onClose, onAddSla }) {
                     </Card>
 
                     <Card title="Evidence">
-                        {Array.isArray(request.evidence) && request.evidence.length > 0 ? (
-                            <div style={{ display: "grid", gap: 10 }}>
-                                {request.evidence.map((e, i) => (
-                                    <div key={i} style={styles.evidenceCard}>
-                                        <div style={styles.evidenceTop}>
-                                            <span style={styles.eType}>{e.type || "evidence"}</span>
-                                            <span style={styles.mutedSmall}>{formatTime(e.uploaded_at)}</span>
-                                        </div>
+                        {(() => {
+                            const employee = Array.isArray(request.employee_evidence)
+                                ? request.employee_evidence
+                                : splitEvidence(request.evidence).employee;
 
-                                        <TwoColRows
-                                            compact
-                                            rows={[
-                                                ["Uploaded By", e.uploaded_by],
-                                                ["Uploaded At", formatTime(e.uploaded_at)],
-                                            ]}
-                                        />
+                            const citizen = Array.isArray(request.citizen_evidence)
+                                ? request.citizen_evidence
+                                : splitEvidence(request.evidence).citizen;
 
-                                        {e.type === "photo" && e.url ? (
-                                            <img
-                                                src={e.url}
-                                                alt="Evidence"
-                                                style={styles.evidenceImg}
-                                            />
-                                        ) : null}
+                            return (
+                                <div style={{ display: "grid", gap: 14 }}>
+                                    <div>
+                                        <div style={{ fontWeight: 900, marginBottom: 8, color: "#0f172a" }}>Employees Evidence</div>
+                                        <EvidenceList items={employee} />
                                     </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <div style={styles.muted}>—</div>
-                        )}
+
+                                    <div>
+                                        <div style={{ fontWeight: 900, marginBottom: 8, color: "#0f172a" }}>Citizen Evidence</div>
+                                        <EvidenceList items={citizen} />
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </Card>
+
                 </div>
 
                 {/* RIGHT */}
@@ -378,6 +344,33 @@ export default function RequestDetailsModal({ request, onClose, onAddSla }) {
                                             Team can be changed <b>only</b> when status is <b>Assigned</b>.
                                         </span>
                                     </>
+                                )}
+                            </div>
+
+                            {/* ✅ SLA Monitoring */}
+                            <div style={styles.monCard}>
+                                <div style={styles.monTop}>
+                                    <div style={styles.monTitle}>SLA Monitoring</div>
+                                    {slaMonLoading ? (
+                                        <span style={styles.monMuted}>Loading…</span>
+                                    ) : (
+                                        <span style={{ ...styles.monPill, ...monPillStyle(slaMon?.state) }}>
+                                            {monLabel(slaMon?.state)}
+                                        </span>
+                                    )}
+                                </div>
+
+                                <div style={styles.monGrid}>
+                                    <MonKV label="Elapsed" value={fmtMinutes(slaMon?.elapsed_minutes)} />
+                                    <MonKV label="Target" value={fmtHours(slaMon?.sla_target_hours)} />
+                                    <MonKV label="To Target" value={fmtMinutes(slaMon?.remaining_to_target_minutes)} />
+                                    <MonKV label="To Breach" value={fmtMinutes(slaMon?.remaining_to_breach_minutes)} />
+                                </div>
+
+                                {!!slaMon?.breach_reason && (
+                                    <div style={styles.monNote}>
+                                        <b>Reason:</b> {String(slaMon.breach_reason)}
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -478,6 +471,49 @@ function getStatusMeta(status) {
 
     return { label: status || "—", bg: "rgba(148,163,184,0.10)", border: "rgba(148,163,184,0.20)", text: "#334155" };
 }
+
+function monLabel(state) {
+    const s = String(state || "").toLowerCase();
+    if (s === "on_track") return "On Track";
+    if (s === "at_risk") return "At Risk";
+    if (s === "breached") return "Breached";
+    return "—";
+}
+
+function monPillStyle(state) {
+    const s = String(state || "").toLowerCase();
+    if (s === "on_track") return { background: "rgba(22,163,74,0.10)", borderColor: "rgba(22,163,74,0.22)", color: "#166534" };
+    if (s === "at_risk") return { background: "rgba(245,158,11,0.12)", borderColor: "rgba(245,158,11,0.22)", color: "#92400e" };
+    if (s === "breached") return { background: "rgba(220,38,38,0.10)", borderColor: "rgba(220,38,38,0.22)", color: "#991b1b" };
+    return { background: "rgba(148,163,184,0.10)", borderColor: "rgba(148,163,184,0.20)", color: "#334155" };
+}
+
+function fmtMinutes(min) {
+    if (min === null || min === undefined) return "—";
+    const n = Number(min);
+    if (!Number.isFinite(n)) return "—";
+    if (n < 60) return `${Math.max(0, Math.floor(n))}m`;
+    const h = Math.floor(n / 60);
+    const m = Math.floor(n % 60);
+    return `${h}h ${m}m`;
+}
+
+function fmtHours(h) {
+    if (h === null || h === undefined) return "—";
+    const n = Number(h);
+    if (!Number.isFinite(n)) return "—";
+    return `${n}h`;
+}
+
+function MonKV({ label, value }) {
+    return (
+        <div style={styles.monKV}>
+            <div style={styles.monK}>{label}</div>
+            <div style={styles.monV}>{value || "—"}</div>
+        </div>
+    );
+}
+
 
 /* ---------- styles ---------- */
 
@@ -613,4 +649,48 @@ const styles = {
         gap: 10,
         paddingTop: 4,
     },
+    monCard: {
+        marginTop: 10,
+        border: "1px solid rgba(15,23,42,0.08)",
+        background: "rgba(15,23,42,0.02)",
+        borderRadius: 12,
+        padding: 12,
+    },
+    monTop: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 10,
+        marginBottom: 10,
+    },
+    monTitle: { fontWeight: 900, color: "#0f172a" },
+    monMuted: { color: "#94a3b8", fontWeight: 800, fontSize: 12 },
+    monPill: {
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "5px 10px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 900,
+        border: "1px solid",
+    },
+    monGrid: {
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 10,
+    },
+    monKV: { display: "grid", gap: 4 },
+    monK: { fontSize: 11, fontWeight: 900, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em" },
+    monV: { fontSize: 13, fontWeight: 900, color: "#0f172a" },
+    monNote: {
+        marginTop: 10,
+        fontSize: 12,
+        fontWeight: 800,
+        color: "#334155",
+        background: "#fff",
+        border: "1px solid rgba(15,23,42,0.08)",
+        borderRadius: 10,
+        padding: "8px 10px",
+    },
+
 };

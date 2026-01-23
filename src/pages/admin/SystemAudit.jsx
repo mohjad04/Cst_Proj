@@ -396,6 +396,7 @@ const TYPES = [
   "request.update",
   "request.delete",
   "user.verify",
+  "request.feedback",
 ];
 
 const ROLES = ["admin", "staff", "system"];
